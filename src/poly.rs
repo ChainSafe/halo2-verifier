@@ -10,20 +10,6 @@ use core::{
 };
 use alloc::vec::Vec;
 
-
-#[derive(Clone, Debug)]
-pub struct CoeffTerm<F: Field, T: Term>(F, T);
-
-impl<F: Field, T: Term> CoeffTerm<F, T> {
-    pub fn coeff(&self) -> &F {
-        &self.0
-    }
-
-    pub fn sparse_term(&self) -> &T {
-        &self.1
-    }
-}
-
 /// Stores a sparse multivariate polynomial in coefficient form.
 #[derive(Clone)]
 pub struct SparsePolynomial<F, T: Term> {
@@ -58,7 +44,7 @@ impl<F> SparsePolynomial<F, SparseTerm> {
     /// let poly: SparsePolynomial<Fq, SparseTerm> = SparsePolynomial::rand(7, 2, rng);
     /// assert_eq!(poly.degree(), 7);
     /// ```
-    fn degree(&self) -> usize {
+    pub fn degree(&self) -> usize {
         self.terms
             .iter()
             .map(|(_, term)| term.degree())

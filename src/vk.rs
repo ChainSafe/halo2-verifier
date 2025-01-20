@@ -108,7 +108,7 @@ impl<F: Field + Ord> From<halo2_proofs::plonk::ConstraintSystem<F>> for Constrai
             .gates
             .iter()
             .flat_map(|gate| {
-                gate.polys
+                gate.polynomials()
                     .iter()
                     .map(|expr| expression_transform(&cs, expr))
                     .collect::<Vec<_>>()
@@ -163,7 +163,6 @@ impl<F: Field + Ord> From<halo2_proofs::plonk::ConstraintSystem<F>> for Constrai
             num_advice_queries: cs.num_advice_queries,
             gates,
             advice_queries: cs.advice_queries,
-            // num_advice_queries: cs.num_advice_queries(),
             instance_queries: cs.instance_queries,
             fixed_queries: cs.fixed_queries,
             permutation: cs.permutation.into(),
@@ -305,14 +304,18 @@ impl<F: Field> ExpressionPoly<F> {
             |a, b| a + b,
         )
     }
+
+    pub fn degree(&self) -> usize {
+        self.0.degree()
+    }
 }
 
 #[inline]
-fn eval<F: Field>(coeff: &F, terms: &Vec<(usize, usize)>, var_access: impl Fn(usize) -> F) -> F {
+fn eval<F: Field>(coeff: &F, terms: &[(usize, usize)], var_access: impl Fn(usize) -> F) -> F {
     let mut result = F::one();
     terms.iter().for_each(|term| {
         let var = &var_access(term.0);
-        result *= var.pow_vartime(&[term.1 as u64, 0, 0, 0]);
+        result *= var.pow_vartime([term.1 as u64, 0, 0, 0]);
     });
     *coeff * result
 }
@@ -322,15 +325,11 @@ fn eval<F: Field>(coeff: &F, terms: &Vec<(usize, usize)>, var_access: impl Fn(us
 fn expression_transform<F: Field + Ord>(
     cs: &halo2_proofs::plonk::ConstraintSystem<F>,
     expr: &halo2_proofs::plonk::Expression<F>,
-    // advice_queries_len: usize,
-    // fixed_queries_len: usize,
-    // instance_queries_len: usize,
-    // challenges_len: usize,
 ) -> ExpressionPoly<F> {
-    let advice_range = cs.num_advice_columns;
-    let fixed_range = advice_range + cs.num_fixed_columns;
-    let instance_range = fixed_range + cs.num_instance_columns;
-    let challenge_range = instance_range + cs.num_challenges;
+    let advice_range = cs.advice_queries().len();
+    let fixed_range = advice_range + cs.fixed_queries().len();
+    let instance_range = fixed_range + cs.instance_queries().len();
+    let challenge_range = instance_range + cs.challenge_phase().len();
 
     ExpressionPoly(expr.evaluate(
         &|c| {

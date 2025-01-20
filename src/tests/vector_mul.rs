@@ -8,8 +8,6 @@ use halo2_proofs::{
     poly::Rotation,
 };
 
-mod common;
-
 // ANCHOR: instructions
 trait NumericInstructions<F: FieldExt>: Chip<F> {
     /// Variable representing a number.
@@ -292,7 +290,8 @@ pub fn get_example_circuit<F: PrimeField>() -> (MyCircuit<F>, Vec<F>) {
 
 // ANCHOR_END: circuit
 
-fn main() {
+#[test]
+fn test_vector_mul() {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
 
@@ -321,10 +320,10 @@ fn main() {
     let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
 
-    common::test_verifier(k, &circuit, Some(public_inputs.clone()), true);
+    super::test_verifier(k, &circuit, Some(public_inputs.clone()), true);
 
     public_inputs[0] += bn256::Fr::one();
-    common::test_verifier(k, &circuit, Some(public_inputs.clone()), false);
+    super::test_verifier(k, &circuit, Some(public_inputs.clone()), false);
 
     // ANCHOR_END: test-circuit
 }

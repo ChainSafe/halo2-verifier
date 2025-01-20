@@ -1,3 +1,6 @@
+mod vector_mul;
+mod shuffle;
+
 use halo2_proofs::{
     halo2curves::bn256::{self, Bn256},
     plonk::{create_proof, keygen_pk, keygen_vk, Circuit},
@@ -13,8 +16,8 @@ use halo2_proofs::{
         Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
     },
 };
-use halo2_verifier::verify_proof;
-use rand::{thread_rng, SeedableRng};
+use crate::{verify_proof, VerifyingKey};
+use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 
 pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
@@ -27,7 +30,9 @@ pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
 
     let vk = keygen_vk(&params, circuit).unwrap();
     let pk = keygen_pk(&params, vk.clone(), circuit).unwrap();
-    let vk: halo2_verifier::VerifyingKey<_> = vk.into();
+    let vk: VerifyingKey<_> = vk.into();
+
+    let rng = &mut StdRng::from_seed(Default::default());
 
     let proof = {
         let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
@@ -42,7 +47,7 @@ pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
             &pk,
             std::slice::from_ref(circuit),
             &[&instance[..]],
-            thread_rng(),
+            rng,
             &mut transcript,
         )
         .expect("proof generation should not fail");

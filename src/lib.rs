@@ -1,4 +1,4 @@
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 
 #[macro_use]
 extern crate alloc;
@@ -7,11 +7,13 @@ mod plonk;
 mod poly;
 mod vk;
 
+#[cfg(test)]
+mod tests;
+
 use core::iter;
 use ff::Field;
 use group::Curve;
 use plonk::vanishing;
-use rand_core::RngCore;
 
 use alloc::vec::Vec;
 use halo2_proofs::arithmetic::{compute_inner_product, FieldExt};
@@ -273,7 +275,7 @@ pub fn verify_proof<
                 core::iter::empty()
                     // Evaluate the circuit using the custom gates provided
                     .chain(vk.cs.gates.iter().map(move |poly| {
-                        poly.evaluate(&advice_evals, &fixed_evals, &instance_evals, &challenges)
+                        poly.evaluate(advice_evals, fixed_evals, instance_evals, challenges)
                     }))
                     .chain(permutation.expressions(
                         vk,

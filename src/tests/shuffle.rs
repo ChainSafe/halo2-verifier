@@ -7,9 +7,7 @@ use halo2_proofs::{
     plonk::{Advice, Challenge, Circuit, Column, ConstraintSystem, Error, Expression, FirstPhase, SecondPhase, Selector},
     poly::Rotation,
 };
-use rand::{rngs::OsRng, RngCore};
-
-mod common;
+use rand::{rngs::{OsRng, StdRng}, RngCore, SeedableRng};
 
 fn rand_2d_array<F: FieldExt, R: RngCore, const W: usize, const H: usize>(
     rng: &mut R,
@@ -267,39 +265,42 @@ fn test_mock_prover<F: FieldExt, const W: usize, const H: usize>(
     };
 }
 
-fn main() {
+#[test]
+fn test_shuffle() {
     const W: usize = 4;
     const H: usize = 32;
     const K: u32 = 8;
 
-    let circuit = &MyCircuit::<_, W, H>::rand(&mut OsRng);
+    let rng = &mut StdRng::from_seed(Default::default());
+
+    let circuit = &MyCircuit::<_, W, H>::rand(rng);
 
     {
         test_mock_prover(K, circuit.clone(), Ok(()));
-        common::test_verifier(K, circuit, None, true);
+        super::test_verifier(K, circuit, None, true);
     }
 
-    // {
-    //     use core::ops::IndexMut;
+    {
+        use core::ops::IndexMut;
 
-    //     let mut circuit = circuit.clone();
-    //     circuit.shuffled = circuit.shuffled.map(|mut shuffled| {
-    //         shuffled.index_mut(0).swap(0, 1);
-    //         shuffled
-    //     });
+        let mut circuit = circuit.clone();
+        circuit.shuffled = circuit.shuffled.map(|mut shuffled| {
+            shuffled.index_mut(0).swap(0, 1);
+            shuffled
+        });
 
-    //     test_mock_prover(
-    //         K,
-    //         circuit.clone(),
-    //         Err(vec![(
-    //             ((1, "z should end with 1").into(), 0, "").into(),
-    //             FailureLocation::InRegion {
-    //                 region: (0, "Shuffle original into shuffled").into(),
-    //                 offset: 32,
-    //             },
-    //         )]),
-    //     );
-    //     common::test_verifier(K, &circuit, None, false);
-    // }
+        test_mock_prover(
+            K,
+            circuit.clone(),
+            Err(vec![(
+                ((1, "z should end with 1").into(), 0, "").into(),
+                FailureLocation::InRegion {
+                    region: (0, "Shuffle original into shuffled").into(),
+                    offset: 32,
+                },
+            )]),
+        );
+        super::test_verifier(K, &circuit, None, false);
+    }
 }
 
