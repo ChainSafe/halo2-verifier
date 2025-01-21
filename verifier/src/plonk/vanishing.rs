@@ -1,20 +1,15 @@
-use core::{iter, marker::PhantomData};
-
-use ff::Field;
-
-use halo2_proofs::{
-    arithmetic::CurveAffine,
-    plonk::{Error},
+use crate::{
+    arithmetic::{CurveAffine, Field},
+    plonk::Error,
     poly::{
         commitment::{Params, MSM},
         VerifierQuery,
     },
     transcript::{read_n_points, EncodedChallenge, TranscriptRead},
 };
+use core::{iter, marker::PhantomData};
 
 use alloc::vec::Vec;
-
-use crate::vk::VerifyingKey;
 
 use super::super::{ChallengeX, ChallengeY};
 
@@ -23,7 +18,6 @@ use super::super::{ChallengeX, ChallengeY};
 pub struct Argument<C: CurveAffine> {
     _marker: PhantomData<C>,
 }
-
 
 #[derive(Debug)]
 pub struct Committed<C: CurveAffine> {
@@ -52,10 +46,7 @@ pub struct Evaluated<C: CurveAffine, M: MSM<C>> {
 }
 
 impl<C: CurveAffine> Argument<C> {
-    pub fn read_commitments_before_y<
-        E: EncodedChallenge<C>,
-        T: TranscriptRead<C, E>,
-    >(
+    pub fn read_commitments_before_y<E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
         transcript: &mut T,
     ) -> Result<Committed<C>, Error> {
         let random_poly_commitment = transcript.read_point()?;
@@ -67,12 +58,9 @@ impl<C: CurveAffine> Argument<C> {
 }
 
 impl<C: CurveAffine> Committed<C> {
-    pub fn read_commitments_after_y<
-        E: EncodedChallenge<C>,
-        T: TranscriptRead<C, E>,
-    >(
+    pub fn read_commitments_after_y<E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
         self,
-        vk: &crate::vk::VerifyingKey<C>,
+        vk: &crate::VerifyingKey<C>,
         transcript: &mut T,
     ) -> Result<Constructed<C>, Error> {
         // Obtain a commitment to h(X) in the form of multiple pieces of degree n - 1
@@ -133,10 +121,7 @@ impl<C: CurveAffine> PartiallyEvaluated<C> {
 }
 
 impl<C: CurveAffine, M: MSM<C>> Evaluated<C, M> {
-    pub fn queries(
-        &self,
-        x: ChallengeX<C>,
-    ) -> impl Iterator<Item = VerifierQuery<C, M>> + Clone {
+    pub fn queries(&self, x: ChallengeX<C>) -> impl Iterator<Item = VerifierQuery<C, M>> + Clone {
         iter::empty()
             .chain(Some(VerifierQuery::new_msm(
                 &self.h_commitment,

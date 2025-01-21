@@ -1,24 +1,15 @@
-mod vector_mul;
-mod shuffle;
-
 use halo2_proofs::{
     halo2curves::bn256::{self, Bn256},
     plonk::{create_proof, keygen_pk, keygen_vk, Circuit},
     poly::{
         commitment::Params,
-        kzg::{
-            commitment::{KZGCommitmentScheme, ParamsKZG},
-            multiopen::{ProverSHPLONK, VerifierSHPLONK},
-            strategy::SingleStrategy,
-        },
-    },
-    transcript::{
-        Blake2bRead, Blake2bWrite, Challenge255, TranscriptReadBuffer, TranscriptWriterBuffer,
-    },
+        kzg::commitment::ParamsKZG,
+    }, transcript::TranscriptWriterBuffer as _,
 };
-use crate::{verify_proof, VerifyingKey};
+use halo2_verifier::{poly::kzg::{commitment::KZGCommitmentScheme, multiopen::VerifierSHPLONK, strategy::SingleStrategy}, transcript::{Blake2bRead, Challenge255, TranscriptReadBuffer}, verify_proof, VerifyingKey};
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
+use serialize::convert_params;
 
 pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
     k: u32,
@@ -30,19 +21,19 @@ pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
 
     let vk = keygen_vk(&params, circuit).unwrap();
     let pk = keygen_pk(&params, vk.clone(), circuit).unwrap();
-    let vk: VerifyingKey<_> = vk.into();
+    let vk: VerifyingKey<_> = serialize::convert_verifier_key(vk);
 
     let rng = &mut StdRng::from_seed(Default::default());
 
     let proof = {
-        let mut transcript = Blake2bWrite::<_, _, Challenge255<_>>::init(vec![]);
+        let mut transcript = halo2_proofs::transcript::Blake2bWrite::<_, _, halo2_proofs::transcript::Challenge255<_>>::init(vec![]);
         let instance = if let Some(ref pi) = pi {
             vec![&pi[..]]
         } else {
             vec![]
         };
 
-        create_proof::<KZGCommitmentScheme<bn256::Bn256>, ProverSHPLONK<bn256::Bn256>, _, _, _, _>(
+        create_proof::<halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme<bn256::Bn256>, halo2_proofs::poly::kzg::multiopen::ProverSHPLONK<bn256::Bn256>, _, _, _, _>(
             &params,
             &pk,
             std::slice::from_ref(circuit),
@@ -62,6 +53,7 @@ pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
     } else {
         vec![]
     };
+    let params = convert_params(params);
     let strategy = SingleStrategy::new(&params);
     let result = verify_proof::<
         KZGCommitmentScheme<bn256::Bn256>,

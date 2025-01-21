@@ -1,0 +1,27 @@
+[package]
+name = "halo2-verifier"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.21"
+rand.workspace = true
+rand_chacha.workspace = true
+hex-literal = { version = "0.4.1", optional = true }
+blake2b_simd = { version = "1", default-features = false }
+sha3 = { version = "0.9.1", default-features = false }
+substrate-bn = "0.6.0"
+serde_json = { version = "1.0.117", optional = true, default-features = false }
+# halo2_proofs = { git = "https://github.com/nulltea/halo2-nostd.git", branch = "no_std" }
+ff.workspace = true
+group.workspace = true
+rand_core = { version = "0.6", default-features = false }
+num-traits = "0.2"
+halo2curves.workspace = true
+
+[dev-dependencies]
+hex-literal = { version = "0.4.1" }
+serde_json = { version = "1.0.117" }
+halo2_proofs.workspace = true
+serialize = { path = "../serialize" }
+

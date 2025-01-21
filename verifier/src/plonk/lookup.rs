@@ -1,12 +1,16 @@
-use crate::vk::{ExpressionPoly, VerifyingKey};
-use alloc::vec::Vec;
-use ff::Field;
-use halo2_proofs::{
+use crate::{
     arithmetic::CurveAffine,
-    plonk::{ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, Error},
+    helpers::{ReadExt, SerdeFormat, SerdePrimeField, WriteExt},
+    io,
+    plonk::{
+        ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, Error, ExpressionPoly,
+        VerifyingKey,
+    },
     poly::{commitment::MSM, Rotation, VerifierQuery},
     transcript::{EncodedChallenge, TranscriptRead},
 };
+use alloc::vec::Vec;
+use ff::Field;
 
 #[derive(Clone, Debug)]
 pub struct Argument<F: Field> {
@@ -15,6 +19,51 @@ pub struct Argument<F: Field> {
 }
 
 impl<F: Field> Argument<F> {
+    pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
+    where
+        F: SerdePrimeField,
+    {
+        writer.write_u32(self.input_expressions.len() as u32)?;
+
+        for expr in &self.input_expressions {
+            expr.write(writer, format)?;
+        }
+        for expr in &self.table_expressions {
+            expr.write(writer, format)?;
+        }
+        Ok(())
+    }
+
+    pub fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self>
+    where
+        F: SerdePrimeField,
+    {
+        let num_expressions = reader.read_u32()?;
+        let mut input_expressions = Vec::new();
+        let mut table_expressions = Vec::new();
+        for _ in 0..num_expressions {
+            input_expressions.push(ExpressionPoly::<F>::read(reader, format)?);
+            table_expressions.push(ExpressionPoly::<F>::read(reader, format)?);
+        }
+
+        Ok(Argument {
+            input_expressions,
+            table_expressions,
+        })
+    }
+
+    pub fn bytes_length(&self) -> usize {
+        self.input_expressions
+            .iter()
+            .map(|expr| expr.bytes_length())
+            .sum::<usize>()
+            + self
+                .table_expressions
+                .iter()
+                .map(|expr| expr.bytes_length())
+                .sum::<usize>()
+    }
+
     pub fn read_permuted_commitments<
         C: CurveAffine,
         E: EncodedChallenge<C>,

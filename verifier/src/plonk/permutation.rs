@@ -1,11 +1,12 @@
 use core::iter;
 
-use halo2_proofs::{
-    arithmetic::CurveAffine, plonk::{Any, ChallengeBeta, ChallengeGamma, ChallengeX, Column, Error}, poly::{commitment::MSM, Coeff, ExtendedLagrangeCoeff, LagrangeCoeff, Polynomial, Rotation, VerifierQuery}, transcript::{EncodedChallenge, TranscriptRead}, SerdeFormat
+use crate::{
+    arithmetic::{CurveAffine, Field, FieldExt}, helpers::{SerdeCurveAffine, SerdeFormat, ReadExt, WriteExt}, io, plonk::{
+        circuit::{Any, Column},
+        ChallengeBeta, ChallengeGamma, ChallengeX, Error,
+    }, poly::{commitment::MSM, Rotation, VerifierQuery}, transcript::{EncodedChallenge, TranscriptRead}
 };
 use alloc::vec::Vec;
-use ff::{Field, PrimeField};
-use halo2_proofs::arithmetic::FieldExt;
 
 /// A permutation argument.
 #[derive(Debug, Clone)]
@@ -14,15 +15,30 @@ pub struct Argument {
     pub columns: Vec<Column<Any>>,
 }
 
-impl From<halo2_proofs::plonk::permutation::Argument> for Argument {
-    fn from(arg: halo2_proofs::plonk::permutation::Argument) -> Self {
-        Argument { columns: arg.columns }
-    }
-}
-
 impl Argument {
     pub(crate) fn new() -> Self {
         Argument { columns: vec![] }
+    }
+
+    pub(crate) fn bytes_length(&self) -> usize {
+        self.columns.len() * Column::<Any>::bytes_length()
+    }
+
+    pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()> {
+        writer.write_u32(self.columns.len() as u32)?;
+        for col in &self.columns {
+            col.write(writer)?;
+        }
+        Ok(())
+    }
+
+    pub fn read<R: io::Read>(reader: &mut R) -> io::Result<Self> {
+        let num_columns = reader.read_u32()?;
+        let mut columns = vec![];
+        for _ in 0..num_columns {
+            columns.push(Column::<Any>::read(reader)?);
+        }
+        Ok(Argument { columns })
     }
 
     /// Returns the minimum circuit degree required by the permutation argument.
@@ -41,7 +57,7 @@ impl Argument {
     pub fn get_columns(&self) -> Vec<Column<Any>> {
         self.columns.clone()
     }
-    
+
     pub fn read_product_commitments<
         C: CurveAffine,
         E: EncodedChallenge<C>,
@@ -113,22 +129,13 @@ impl<C: CurveAffine> Committed<C> {
     }
 }
 
-
 /// The verifying key for a single permutation argument.
 #[derive(Debug, Clone)]
-pub struct PermutationVk<C: CurveAffine> {
+pub struct VerifyingKey<C: CurveAffine> {
     pub commitments: Vec<C>,
 }
 
-impl<C: CurveAffine> From<halo2_proofs::plonk::permutation::VerifyingKey<C>> for PermutationVk<C> {
-    fn from(vk: halo2_proofs::plonk::permutation::VerifyingKey<C>) -> Self {
-        PermutationVk {
-            commitments: vk.commitments,
-        }
-    }
-}
-
-impl<C: CurveAffine> PermutationVk<C> {
+impl<C: CurveAffine> VerifyingKey<C> {
     pub fn evaluate<E: EncodedChallenge<C>, T: TranscriptRead<C, E>>(
         &self,
         transcript: &mut T,
@@ -141,18 +148,46 @@ impl<C: CurveAffine> PermutationVk<C> {
 
         Ok(CommonEvaluated { permutation_evals })
     }
+
+    pub(crate) fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
+    where
+        C: SerdeCurveAffine,
+    {
+        for commitment in &self.commitments {
+            commitment.write(writer, format)?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn read<R: io::Read>(
+        reader: &mut R,
+        argument: &Argument,
+        format: SerdeFormat,
+    ) -> io::Result<Self>
+    where
+        C: SerdeCurveAffine,
+    {
+        let commitments = (0..argument.columns.len())
+            .map(|_| C::read(reader, format))
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(VerifyingKey { commitments })
+    }
+
+    pub(crate) fn bytes_length(&self) -> usize {
+        self.commitments.len() * C::default().to_bytes().as_ref().len()
+    }
 }
+
 
 #[derive(Debug)]
 pub struct CommonEvaluated<C: CurveAffine> {
     pub permutation_evals: Vec<C::Scalar>,
 }
 
-
 impl<C: CurveAffine> Evaluated<C> {
     pub fn expressions<'a>(
         &'a self,
-        vk: &'a crate::vk::VerifyingKey<C>,
+        vk: &'a crate::VerifyingKey<C>,
         p: &'a Argument,
         common: &'a CommonEvaluated<C>,
         advice_evals: &'a [C::Scalar],
@@ -252,7 +287,7 @@ impl<C: CurveAffine> Evaluated<C> {
 
     pub fn queries<'r, M: MSM<C> + 'r>(
         &'r self,
-        vk: &'r crate::vk::VerifyingKey<C>,
+        vk: &'r crate::VerifyingKey<C>,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = VerifierQuery<'r, C, M>> + Clone {
         let blinding_factors = vk.cs.blinding_factors();
@@ -291,7 +326,7 @@ impl<C: CurveAffine> Evaluated<C> {
 impl<C: CurveAffine> CommonEvaluated<C> {
     pub fn queries<'r, M: MSM<C> + 'r>(
         &'r self,
-        vkey: &'r PermutationVk<C>,
+        vkey: &'r VerifyingKey<C>,
         x: ChallengeX<C>,
     ) -> impl Iterator<Item = VerifierQuery<'r, C, M>> + Clone {
         // Open permutation commitments for each permutation argument at x

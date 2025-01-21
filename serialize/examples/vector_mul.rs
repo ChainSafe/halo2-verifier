@@ -4,9 +4,14 @@ use halo2_proofs::{
     arithmetic::{Field, FieldExt},
     circuit::{AssignedCell, Chip, Layouter, Region, SimpleFloorPlanner, Value},
     halo2curves::bn256::{self},
-    plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
-    poly::Rotation,
+    plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+    poly::{commitment::Params, kzg::commitment::ParamsKZG, Rotation},
 };
+use halo2_verifier::helpers::SerdeFormat;
+use halo2curves::bn256::Bn256;
+use rand::SeedableRng;
+use rand_chacha::ChaCha20Rng;
+use serialize::convert_verifier_key;
 
 // ANCHOR: instructions
 trait NumericInstructions<F: FieldExt>: Chip<F> {
@@ -290,8 +295,7 @@ pub fn get_example_circuit<F: PrimeField>() -> (MyCircuit<F>, Vec<F>) {
 
 // ANCHOR_END: circuit
 
-#[test]
-fn test_vector_mul() {
+fn main() {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
 
@@ -320,11 +324,32 @@ fn test_vector_mul() {
     let prover = MockProver::run(k, &circuit, vec![public_inputs.clone()]).unwrap();
     assert_eq!(prover.verify(), Ok(()));
 
-    super::test_verifier(k, &circuit, Some(public_inputs.clone()), true);
+    let params = gen_srs(k);
 
-    public_inputs[0] += bn256::Fr::one();
-    super::test_verifier(k, &circuit, Some(public_inputs.clone()), false);
+    let vk = keygen_vk(&params, &circuit).unwrap();
+    let vk = convert_verifier_key(vk);
+    let bytes = vk.to_bytes(SerdeFormat::RawBytes);
+    std::fs::write("vk.bin", bytes).unwrap();
 
     // ANCHOR_END: test-circuit
 }
 
+pub fn gen_srs(k: u32) -> ParamsKZG<Bn256> {
+    let dir = "./params".to_string();
+    let path = format!("{dir}/kzg_bn254_{k}.srs");
+    match std::fs::read(path.as_str()) {
+        Ok(b) => {
+            println!("read params from {path}");
+            ParamsKZG::<Bn256>::read(&mut b.as_slice()).unwrap()
+        }
+        Err(_) => {
+            println!("creating params for {k}");
+            std::fs::create_dir_all(dir).unwrap();
+            let params = ParamsKZG::<Bn256>::setup(k, ChaCha20Rng::from_seed(Default::default()));
+            let mut bytes = vec![];
+            params.write(&mut bytes).unwrap();
+            std::fs::write(path.as_str(), bytes).unwrap();
+            params
+        }
+    }
+}

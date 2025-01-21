@@ -1,0 +1,16 @@
+[package]
+name = "serialize"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ff.workspace = true
+group.workspace = true
+halo2_proofs.workspace = true
+halo2curves.workspace = true
+halo2-verifier = { path = "../verifier" }
+
+[dev-dependencies]
+hex-literal = { version = "0.4.1" }
+rand = { version = "0.8.5" }
+rand_chacha = { version = "0.3" }

@@ -21,6 +21,10 @@ pub struct SparsePolynomial<F, T: Term> {
 }
 
 impl<F: Field, T: Term> SparsePolynomial<F, T> {
+    pub fn new(num_vars: usize, terms: Vec<(F, T)>) -> Self {
+        Self { num_vars, terms }
+    }
+
     fn remove_zeros(&mut self) {
         self.terms.retain(|(c, _)| !bool::from(c.is_zero()));
     }

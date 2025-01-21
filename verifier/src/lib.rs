@@ -3,32 +3,29 @@
 #[macro_use]
 extern crate alloc;
 
-mod plonk;
-mod poly;
-mod vk;
+mod arithmetic;
+pub mod helpers;
+pub mod plonk;
+pub mod poly;
+pub mod transcript;
 
-#[cfg(test)]
-mod tests;
+pub use halo2curves::io;
 
+use crate::{
+    arithmetic::{compute_inner_product, FieldExt},
+    plonk::{ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error},
+    poly::{
+        commitment::{CommitmentScheme, Params, Verifier},
+        VerificationStrategy, VerifierQuery,
+    },
+    transcript::{read_n_scalars, EncodedChallenge, TranscriptRead},
+};
+use alloc::vec::Vec;
 use core::iter;
 use ff::Field;
-use group::Curve;
 use plonk::vanishing;
 
-use alloc::vec::Vec;
-use halo2_proofs::arithmetic::{compute_inner_product, FieldExt};
-use halo2_proofs::plonk::{
-    ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, ChallengeY, Error,
-};
-use halo2_proofs::poly::commitment::{CommitmentScheme, Verifier};
-use halo2_proofs::poly::VerificationStrategy;
-use halo2_proofs::poly::{
-    commitment::{Blind, Params},
-    VerifierQuery,
-};
-use halo2_proofs::transcript::{read_n_scalars, EncodedChallenge, TranscriptRead};
-
-pub use vk::VerifyingKey;
+pub use plonk::vk::{ConstraintSystem, VerifyingKey};
 
 /// Returns a boolean indicating whether or not the proof is valid
 pub fn verify_proof<
@@ -53,24 +50,7 @@ pub fn verify_proof<
     }
 
     let instance_commitments = if V::QUERY_INSTANCE {
-        instances
-            .iter()
-            .map(|instance| {
-                instance
-                    .iter()
-                    .map(|instance| {
-                        if instance.len() > params.n() as usize - (vk.cs.blinding_factors() + 1) {
-                            return Err(Error::InstanceTooLarge);
-                        }
-                        let mut poly = instance.to_vec();
-                        poly.resize(params.n() as usize, Scheme::Scalar::zero());
-                        let poly = vk.domain.lagrange_from_vec(poly);
-
-                        Ok(params.commit_lagrange(&poly, Blind::default()).to_affine())
-                    })
-                    .collect::<Result<Vec<_>, _>>()
-            })
-            .collect::<Result<Vec<_>, _>>()?
+       unreachable!() // not supported for SHPLONK and GWC
     } else {
         vec![vec![]; instances.len()]
     };
@@ -390,4 +370,10 @@ pub fn verify_proof<
             .verify_proof(transcript, queries, msm)
             .map_err(|_| Error::Opening)
     })
+}
+
+pub(crate) fn get_rng() -> rand_chacha::ChaCha20Rng {
+    use rand_chacha::ChaCha20Rng;
+    use rand_core::SeedableRng;
+    <ChaCha20Rng as SeedableRng>::seed_from_u64(42)
 }

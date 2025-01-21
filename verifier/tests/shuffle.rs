@@ -1,3 +1,4 @@
+mod helpers;
 use core::iter;
 use ff::BatchInvert;
 use halo2_proofs::{
@@ -8,6 +9,8 @@ use halo2_proofs::{
     poly::Rotation,
 };
 use rand::{rngs::{OsRng, StdRng}, RngCore, SeedableRng};
+
+use helpers::test_verifier;
 
 fn rand_2d_array<F: FieldExt, R: RngCore, const W: usize, const H: usize>(
     rng: &mut R,
@@ -277,7 +280,7 @@ fn test_shuffle() {
 
     {
         test_mock_prover(K, circuit.clone(), Ok(()));
-        super::test_verifier(K, circuit, None, true);
+        test_verifier(K, circuit, None, true);
     }
 
     {
@@ -300,7 +303,7 @@ fn test_shuffle() {
                 },
             )]),
         );
-        super::test_verifier(K, &circuit, None, false);
+        test_verifier(K, &circuit, None, false);
     }
 }
 
