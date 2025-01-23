@@ -9,6 +9,7 @@ pub mod plonk;
 pub mod poly;
 pub mod transcript;
 
+pub use halo2curves;
 pub use halo2curves::io;
 
 use crate::{
@@ -26,6 +27,7 @@ use ff::Field;
 use plonk::vanishing;
 
 pub use plonk::vk::{ConstraintSystem, VerifyingKey};
+pub use poly::kzg::commitment::ParamsKZG;
 
 /// Returns a boolean indicating whether or not the proof is valid
 pub fn verify_proof<

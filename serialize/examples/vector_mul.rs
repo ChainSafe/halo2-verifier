@@ -1,17 +1,21 @@
-use std::marker::PhantomData;
 use ff::PrimeField;
 use halo2_proofs::{
     arithmetic::{Field, FieldExt},
     circuit::{AssignedCell, Chip, Layouter, Region, SimpleFloorPlanner, Value},
     halo2curves::bn256::{self},
-    plonk::{keygen_vk, Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
+    plonk::{
+        create_proof, keygen_pk, keygen_vk, Advice, Circuit, Column, ConstraintSystem, Error,
+        Instance, Selector,
+    },
     poly::{commitment::Params, kzg::commitment::ParamsKZG, Rotation},
+    transcript::TranscriptWriterBuffer,
 };
 use halo2_verifier::helpers::SerdeFormat;
 use halo2curves::bn256::Bn256;
-use rand::SeedableRng;
+use rand::{rngs::StdRng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
-use serialize::convert_verifier_key;
+use serialize::{convert_params, convert_verifier_key};
+use std::marker::PhantomData;
 
 // ANCHOR: instructions
 trait NumericInstructions<F: FieldExt>: Chip<F> {
@@ -299,7 +303,7 @@ fn main() {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    const N: usize = 10;
+    const N: usize = 1;
     // ANCHOR: test-circuit
     // The number of rows in our circuit cannot exceed 2^k. Since our example
     // circuit is very small, we can pick a very small value here.
@@ -327,9 +331,64 @@ fn main() {
     let params = gen_srs(k);
 
     let vk = keygen_vk(&params, &circuit).unwrap();
+    let pk = keygen_pk(&params, vk.clone(), &circuit).unwrap();
+
+    {
+        let rng = &mut StdRng::from_seed(Default::default());
+
+        let mut transcript = halo2_proofs::transcript::Blake2bWrite::<
+            _,
+            _,
+            halo2_proofs::transcript::Challenge255<_>,
+        >::init(vec![]);
+        create_proof::<
+            halo2_proofs::poly::kzg::commitment::KZGCommitmentScheme<bn256::Bn256>,
+            halo2_proofs::poly::kzg::multiopen::ProverSHPLONK<bn256::Bn256>,
+            _,
+            _,
+            _,
+            _,
+        >(
+            &params,
+            &pk,
+            std::slice::from_ref(&circuit),
+            &[&[&public_inputs[..]]],
+            rng,
+            &mut transcript,
+        )
+        .expect("proof generation should not fail");
+
+        let proof = transcript.finalize();
+
+        std::fs::write("VALID_PROOF.bin", proof).unwrap();
+
+        let pubs_bytes = public_inputs
+            .iter()
+            .flat_map(|x| x.to_bytes())
+            .collect::<Vec<_>>();
+        std::fs::write("VALID_PUBS.bin", pubs_bytes).unwrap();
+    }
+
+    let mut bytes = vec![];
+    let params_bytes_len = halo2_verifier::ParamsKZG::<bn256::Bn256>::bytes_length();
+
+    let params = convert_params(params);
+    params.write(&mut bytes).unwrap();
+
     let vk = convert_verifier_key(vk);
-    let bytes = vk.to_bytes(SerdeFormat::RawBytes);
-    std::fs::write("vk.bin", bytes).unwrap();
+    vk.write(&mut bytes, SerdeFormat::RawBytes).unwrap();
+
+    {
+        let _ = halo2_verifier::ParamsKZG::<bn256::Bn256>::read(&mut &bytes[..params_bytes_len])
+            .unwrap();
+        let _ = halo2_verifier::VerifyingKey::<bn256::G1Affine>::read(
+            &mut &bytes[params_bytes_len..],
+            SerdeFormat::RawBytes,
+        )
+        .unwrap();
+    }
+
+    std::fs::write("VALID_VK.bin", bytes).unwrap();
 
     // ANCHOR_END: test-circuit
 }

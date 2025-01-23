@@ -1,10 +1,11 @@
 use crate::arithmetic::{best_multiexp, parallelize, FieldExt};
-use halo2curves::Group;
 use crate::helpers::SerdeCurveAffine;
 use crate::helpers::SerdeFormat;
 use crate::poly::commitment::{Blind, CommitmentScheme, Params, ParamsVerifier};
 use crate::poly::{LagrangeCoeff, Polynomial};
 use alloc::vec::Vec;
+use group::GroupEncoding;
+use halo2curves::Group;
 
 use core::fmt::Debug;
 use core::marker::PhantomData;
@@ -129,6 +130,23 @@ impl<E: Engine + Debug> ParamsKZG<E> {
     }
 
     /// Writes parameters to buffer
+    pub fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()>
+    where
+        E::G1Affine: SerdeCurveAffine,
+        E::G2Affine: SerdeCurveAffine,
+    {
+        self.write_custom(writer, SerdeFormat::Processed)
+    }
+
+    pub fn read<R: io::Read>(reader: &mut R) -> io::Result<Self>
+    where
+        E::G1Affine: SerdeCurveAffine,
+        E::G2Affine: SerdeCurveAffine,
+    {
+        Self::read_custom(reader, SerdeFormat::Processed)
+    }
+
+    /// Writes parameters to buffer
     pub fn write_custom<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
     where
         E::G1Affine: SerdeCurveAffine,
@@ -177,9 +195,7 @@ impl<E: Engine + Debug> ParamsKZG<E> {
                 let g = load_points_from_file_parallelly(reader)?;
                 g.ok_or("invalid point encoding")?
             }
-            SerdeFormat::RawBytes => {
-                <E::G1Affine as SerdeCurveAffine>::read(reader, format)?
-            }
+            SerdeFormat::RawBytes => <E::G1Affine as SerdeCurveAffine>::read(reader, format)?,
             SerdeFormat::RawBytesUnchecked => {
                 // avoid try branching for performance
                 <E::G1Affine as SerdeCurveAffine>::read(reader, format).unwrap()
@@ -196,6 +212,30 @@ impl<E: Engine + Debug> ParamsKZG<E> {
             g2,
             s_g2,
         })
+    }
+
+    pub fn bytes_length() -> usize {
+        E::G1Affine::default().to_bytes().as_ref().len()
+            + E::G2Affine::default().to_bytes().as_ref().len() * 2
+            + 4
+    }
+
+    pub fn to_bytes(&self) -> Vec<u8>
+    where
+        E::G1Affine: SerdeCurveAffine,
+        E::G2Affine: SerdeCurveAffine,
+    {
+        let mut bytes = Vec::<u8>::with_capacity(Self::bytes_length());
+        Self::write_custom(self, &mut bytes, SerdeFormat::Processed).expect("Writing to vector should not fail");
+        bytes
+    }
+
+    pub fn from_bytes(mut bytes: &[u8]) -> io::Result<Self>
+    where
+        E::G1Affine: SerdeCurveAffine,
+        E::G2Affine: SerdeCurveAffine,
+    {
+        Self::read_custom(&mut bytes, SerdeFormat::Processed)
     }
 }
 

@@ -3,7 +3,7 @@ use core::fmt;
 
 use crate::transcript::ChallengeScalar;
 
-pub mod circuit;
+mod circuit;
 pub mod lookup;
 pub mod permutation;
 pub(crate) mod vanishing;

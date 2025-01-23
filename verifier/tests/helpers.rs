@@ -6,7 +6,7 @@ use halo2_proofs::{
         kzg::commitment::ParamsKZG,
     }, transcript::TranscriptWriterBuffer as _,
 };
-use halo2_verifier::{poly::kzg::{commitment::KZGCommitmentScheme, multiopen::VerifierSHPLONK, strategy::SingleStrategy}, transcript::{Blake2bRead, Challenge255, TranscriptReadBuffer}, verify_proof, VerifyingKey};
+use halo2_verifier::{helpers::SerdeFormat, poly::kzg::{commitment::KZGCommitmentScheme, multiopen::VerifierSHPLONK, strategy::SingleStrategy}, transcript::{Blake2bRead, Challenge255, TranscriptReadBuffer}, verify_proof, VerifyingKey};
 use rand::{rngs::StdRng, thread_rng, Rng, SeedableRng};
 use rand_chacha::ChaCha20Rng;
 use serialize::convert_params;
@@ -22,6 +22,9 @@ pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
     let vk = keygen_vk(&params, circuit).unwrap();
     let pk = keygen_pk(&params, vk.clone(), circuit).unwrap();
     let vk: VerifyingKey<_> = serialize::convert_verifier_key(vk);
+    let vk_bytes = vk.to_bytes(SerdeFormat::RawBytes);
+
+    let vk = VerifyingKey::<_>::from_bytes(&vk_bytes, SerdeFormat::Processed).unwrap();
 
     let rng = &mut StdRng::from_seed(Default::default());
 

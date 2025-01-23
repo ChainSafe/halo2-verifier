@@ -84,10 +84,10 @@ where
 
         let fixed_commitments: Vec<_> = (0..num_fixed_columns)
             .map(|_| C::read(reader, format))
-            .collect::<Result<_, _>>()?;
+            .collect::<Result<_, _>>().unwrap();
 
         let cs_degree = reader.read_u32()?;
-        let cs = ConstraintSystem::read(reader, format)?;
+        let cs = ConstraintSystem::read(reader, format).unwrap();
 
         let domain = EvaluationDomain::new(cs_degree, k);
 
@@ -104,9 +104,9 @@ where
                 }
                 Ok(selector)
             })
-            .collect::<io::Result<_>>()?;
+            .collect::<io::Result<_>>().unwrap();
 
-        let transcript_repr = C::Scalar::read(reader, format)?;
+        let transcript_repr = C::Scalar::read(reader, format).unwrap();
 
         Ok(Self {
             domain,
@@ -114,7 +114,6 @@ where
             permutation,
             cs,
             cs_degree: cs_degree as usize,
-            // Temporary, this is not pinned.
             transcript_repr,
             selectors,
         })
@@ -134,7 +133,7 @@ where
 }
 
 impl<C: CurveAffine> VerifyingKey<C> {
-    fn bytes_length(&self) -> usize {
+    pub fn bytes_length(&self) -> usize {
         8 + (self.fixed_commitments.len() * C::default().to_bytes().as_ref().len())
             + self.permutation.bytes_length()
             + self.selectors.len()
@@ -143,6 +142,8 @@ impl<C: CurveAffine> VerifyingKey<C> {
                     .get(0)
                     .map(|selector| selector.len() / 8 + 1)
                     .unwrap_or(0))
+            + self.cs.bytes_length()
+            + 32
     }
 
     /// Hashes a verification key into a transcript.
@@ -309,9 +310,10 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
 
         let permutation = permutation::Argument::read(reader)?;
 
+
         let mut gates = Vec::new();
         for _ in 0..num_gates {
-            gates.push(ExpressionPoly::read(reader, format)?);
+            gates.push(ExpressionPoly::read(reader, format).unwrap());
         }
 
         let mut lookups = Vec::new();
@@ -442,6 +444,7 @@ impl<F: SerdePrimeField> ExpressionPoly<F> {
         writer.write_u32(self.0.terms.len() as u32)?;
         for (coeff, term) in &self.0.terms {
             coeff.write(writer, format)?;
+            writer.write_u32(term.0.len() as u32)?;
             for (var, pow) in &term.0 {
                 writer.write_u32(*var as u32)?;
                 writer.write_u32(*pow as u32)?;
@@ -453,11 +456,12 @@ impl<F: SerdePrimeField> ExpressionPoly<F> {
     pub fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         let num_vars = reader.read_u32()? as usize;
         let num_terms = reader.read_u32()? as usize;
-        let mut terms = Vec::new();
+        let mut terms = Vec::with_capacity(num_terms);
         for _ in 0..num_terms {
             let coeff = F::read(reader, format)?;
-            let mut term_vars = Vec::new();
-            for _ in 0..num_vars {
+            let mut term_vars = Vec::with_capacity(num_vars);
+            let term_num_vars = reader.read_u32()? as usize;
+            for _ in 0..term_num_vars {
                 let var = reader.read_u32()? as usize;
                 let pow = reader.read_u32()? as usize;
                 term_vars.push((var, pow));
@@ -474,7 +478,7 @@ impl<F: Field> ExpressionPoly<F> {
             .0
             .terms
             .iter()
-            .map(|(_, term)| 32 + (term.0.len() + 16))
+            .map(|(_, term)| 36 + (term.0.len() + 16))
             .sum::<usize>()
     }
 
