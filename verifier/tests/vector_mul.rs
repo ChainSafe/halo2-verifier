@@ -1,19 +1,19 @@
 mod helpers;
 
-use std::marker::PhantomData;
 use ff::PrimeField;
 use halo2_proofs::{
-    arithmetic::{Field, FieldExt},
+    arithmetic::Field,
     circuit::{AssignedCell, Chip, Layouter, Region, SimpleFloorPlanner, Value},
     halo2curves::bn256::{self},
     plonk::{Advice, Circuit, Column, ConstraintSystem, Error, Instance, Selector},
     poly::Rotation,
 };
+use std::marker::PhantomData;
 
 use helpers::test_verifier;
 
 // ANCHOR: instructions
-trait NumericInstructions<F: FieldExt>: Chip<F> {
+trait NumericInstructions<F: Field>: Chip<F> {
     /// Variable representing a number.
     type Num;
 
@@ -71,7 +71,7 @@ pub struct FieldConfig {
     s_mul: Selector,
 }
 
-impl<F: FieldExt> FieldChip<F> {
+impl<F: Field> FieldChip<F> {
     fn construct(config: <Self as Chip<F>>::Config) -> Self {
         Self {
             config,
@@ -129,7 +129,7 @@ impl<F: FieldExt> FieldChip<F> {
 // ANCHOR_END: chip-config
 
 // ANCHOR: chip-impl
-impl<F: FieldExt> Chip<F> for FieldChip<F> {
+impl<F: Field> Chip<F> for FieldChip<F> {
     type Config = FieldConfig;
     type Loaded = ();
 
@@ -148,7 +148,7 @@ impl<F: FieldExt> Chip<F> for FieldChip<F> {
 #[derive(Clone, Debug)]
 struct Number<F: Field>(AssignedCell<F, F>);
 
-impl<F: FieldExt> NumericInstructions<F> for FieldChip<F> {
+impl<F: Field> NumericInstructions<F> for FieldChip<F> {
     type Num = Number<F>;
 
     fn load_private(
@@ -233,7 +233,7 @@ pub struct MyCircuit<F: Field> {
     b: Vec<Value<F>>,
 }
 
-impl<F: FieldExt> Circuit<F> for MyCircuit<F> {
+impl<F: Field> Circuit<F> for MyCircuit<F> {
     // Since we are using a single chip for everything, we can just reuse its config.
     type Config = FieldConfig;
     type FloorPlanner = SimpleFloorPlanner;
@@ -326,9 +326,8 @@ fn test_vector_mul() {
 
     test_verifier(k, &circuit, Some(public_inputs.clone()), true);
 
-    public_inputs[0] += bn256::Fr::one();
+    public_inputs[0] += bn256::Fr::ONE;
     test_verifier(k, &circuit, Some(public_inputs.clone()), false);
 
     // ANCHOR_END: test-circuit
 }
-

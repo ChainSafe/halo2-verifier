@@ -1,5 +1,5 @@
-pub use group::*;
 pub use ff::*;
+pub use group::*;
 pub use halo2curves::*;
 
 use alloc::vec::Vec;
@@ -114,7 +114,7 @@ pub fn compute_inner_product<F: Field>(a: &[F], b: &[F]) -> F {
     // TODO: parallelize?
     assert_eq!(a.len(), b.len());
 
-    let mut acc = F::zero();
+    let mut acc = F::ZERO;
     for (a, b) in a.iter().zip(b.iter()) {
         acc += (*a) * (*b);
     }
@@ -138,7 +138,7 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
     fn evaluate<F: Field>(poly: &[F], point: F) -> F {
         poly.iter()
             .rev()
-            .fold(F::zero(), |acc, coeff| acc * point + coeff)
+            .fold(F::ZERO, |acc, coeff| acc * point + coeff)
     }
     evaluate(poly, point)
 }
@@ -146,7 +146,7 @@ pub fn eval_polynomial<F: Field>(poly: &[F], point: F) -> F {
 /// Returns coefficients of an n - 1 degree polynomial given a set of n points
 /// and their evaluations. This function will panic if two values in `points`
 /// are the same.
-pub fn lagrange_interpolate<F: FieldExt>(points: &[F], evals: &[F]) -> Vec<F> {
+pub fn lagrange_interpolate<F: Field>(points: &[F], evals: &[F]) -> Vec<F> {
     assert_eq!(points.len(), evals.len());
     if points.len() == 1 {
         // Constant polynomial
@@ -168,11 +168,11 @@ pub fn lagrange_interpolate<F: FieldExt>(points: &[F], evals: &[F]) -> Vec<F> {
         // Compute (x_j - x_k)^(-1) for each j != i
         denoms.iter_mut().flat_map(|v| v.iter_mut()).batch_invert();
 
-        let mut final_poly = vec![F::zero(); points.len()];
+        let mut final_poly = vec![F::ZERO; points.len()];
         for (j, (denoms, eval)) in denoms.into_iter().zip(evals.iter()).enumerate() {
             let mut tmp: Vec<F> = Vec::with_capacity(points.len());
             let mut product = Vec::with_capacity(points.len() - 1);
-            tmp.push(F::one());
+            tmp.push(F::ONE);
             for (x_k, denom) in points
                 .iter()
                 .enumerate()
@@ -180,11 +180,11 @@ pub fn lagrange_interpolate<F: FieldExt>(points: &[F], evals: &[F]) -> Vec<F> {
                 .map(|a| a.1)
                 .zip(denoms.into_iter())
             {
-                product.resize(tmp.len() + 1, F::zero());
+                product.resize(tmp.len() + 1, F::ZERO);
                 for ((a, b), product) in tmp
                     .iter()
-                    .chain(core::iter::once(&F::zero()))
-                    .zip(core::iter::once(&F::zero()).chain(tmp.iter()))
+                    .chain(core::iter::once(&F::ZERO))
+                    .zip(core::iter::once(&F::ZERO).chain(tmp.iter()))
                     .zip(product.iter_mut())
                 {
                     *product = *a * (-denom * x_k) + *b * denom;
@@ -201,11 +201,10 @@ pub fn lagrange_interpolate<F: FieldExt>(points: &[F], evals: &[F]) -> Vec<F> {
     }
 }
 
-
-pub(crate) fn evaluate_vanishing_polynomial<F: FieldExt>(roots: &[F], z: F) -> F {
-    roots.iter().fold(F::one(), |acc, point| (z - point) * acc)
+pub(crate) fn evaluate_vanishing_polynomial<F: Field>(roots: &[F], z: F) -> F {
+    roots.iter().fold(F::ONE, |acc, point| (z - point) * acc)
 }
 
-pub(crate) fn powers<F: FieldExt>(base: F) -> impl Iterator<Item = F> {
-    core::iter::successors(Some(F::one()), move |power| Some(base * power))
+pub(crate) fn powers<F: Field>(base: F) -> impl Iterator<Item = F> {
+    core::iter::successors(Some(F::ONE), move |power| Some(base * power))
 }

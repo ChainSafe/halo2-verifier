@@ -1,19 +1,16 @@
 use core::marker::PhantomData;
 
 use crate::{
-    arithmetic::{CurveAffine, FieldExt},
+    arithmetic::{CurveAffine, Field},
     helpers::{ReadExt, SerdeCurveAffine, SerdeFormat, SerdePrimeField, WriteExt},
     io,
-    plonk::{
-        lookup,
-        lookup::{Committed, PermutationCommitments},
-        permutation, Advice, Any, Column, Fixed, Instance,
-    },
-    poly::{EvaluationDomain, Rotation, SparsePolynomial, SparseTerm, Term},
-    transcript::{EncodedChallenge, Transcript, TranscriptRead},
+    plonk::{lookup, permutation, Advice, Any, Column, Fixed, Instance},
+    poly::{EvaluationDomain, Rotation, SparsePolynomial, SparseTerm},
+    transcript::{EncodedChallenge, Transcript},
 };
 use alloc::vec::Vec;
-use ff::Field;
+
+use super::shuffle;
 
 /// This is a verifying key which allows for the verification of proofs for a
 /// particular circuit.
@@ -38,11 +35,11 @@ where
     ///
     /// Writes a curve element according to `format`:
     /// - `Processed`: Writes a compressed curve element with coordinates in standard form.
-    /// Writes a field element in standard form, with endianness specified by the
-    /// `PrimeField` implementation.
+    ///   Writes a field element in standard form, with endianness specified by the
+    ///   `PrimeField` implementation.
     /// - Otherwise: Writes an uncompressed curve element with coordinates in Montgomery form
-    /// Writes a field element into raw bytes in its internal Montgomery representation,
-    /// WITHOUT performing the expensive Montgomery reduction.
+    ///   Writes a field element into raw bytes in its internal Montgomery representation,
+    ///   WITHOUT performing the expensive Montgomery reduction.
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         writer.write_u32(self.domain.k())?;
         writer.write_u32(self.fixed_commitments.len() as u32)?;
@@ -72,22 +69,22 @@ where
     ///
     /// Reads a curve element from the buffer and parses it according to the `format`:
     /// - `Processed`: Reads a compressed curve element and decompresses it.
-    /// Reads a field element in standard form, with endianness specified by the
-    /// `PrimeField` implementation, and checks that the element is less than the modulus.
+    ///   Reads a field element in standard form, with endianness specified by the
+    ///   `PrimeField` implementation, and checks that the element is less than the modulus.
     /// - `RawBytes`: Reads an uncompressed curve element with coordinates in Montgomery form.
-    /// Checks that field elements are less than modulus, and then checks that the point is on the curve.
+    ///   Checks that field elements are less than modulus, and then checks that the point is on the curve.
     /// - `RawBytesUnchecked`: Reads an uncompressed curve element with coordinates in Montgomery form;
-    /// does not perform any checks
+    ///   does not perform any checks
     pub fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         let k = reader.read_u32()?;
         let num_fixed_columns = reader.read_u32()?;
 
         let fixed_commitments: Vec<_> = (0..num_fixed_columns)
             .map(|_| C::read(reader, format))
-            .collect::<Result<_, _>>().unwrap();
+            .collect::<Result<_, _>>()?;
 
         let cs_degree = reader.read_u32()?;
-        let cs = ConstraintSystem::read(reader, format).unwrap();
+        let cs = ConstraintSystem::read(reader, format)?;
 
         let domain = EvaluationDomain::new(cs_degree, k);
 
@@ -99,14 +96,14 @@ where
             .map(|mut selector| {
                 let mut selector_bytes = vec![0u8; (selector.len() + 7) / 8];
                 reader.read_exact(&mut selector_bytes)?;
-                for (bits, byte) in selector.chunks_mut(8).into_iter().zip(selector_bytes) {
+                for (bits, byte) in selector.chunks_mut(8).zip(selector_bytes) {
                     crate::helpers::unpack(byte, bits);
                 }
                 Ok(selector)
             })
-            .collect::<io::Result<_>>().unwrap();
+            .collect::<io::Result<_>>()?;
 
-        let transcript_repr = C::Scalar::read(reader, format).unwrap();
+        let transcript_repr = C::Scalar::read(reader, format)?;
 
         Ok(Self {
             domain,
@@ -139,7 +136,7 @@ impl<C: CurveAffine> VerifyingKey<C> {
             + self.selectors.len()
                 * (self
                     .selectors
-                    .get(0)
+                    .first()
                     .map(|selector| selector.len() / 8 + 1)
                     .unwrap_or(0))
             + self.cs.bytes_length()
@@ -207,6 +204,10 @@ pub struct ConstraintSystem<F: Field> {
     // Vector of lookup arguments, where each corresponds to a sequence of
     // input expressions and a sequence of table expressions involved in the lookup.
     pub lookups: Vec<lookup::Argument<F>>,
+
+    // Vector of shuffle arguments, where each corresponds to a sequence of
+    // input expressions and a sequence of shuffle expressions involved in the shuffle.
+    pub shuffles: Vec<shuffle::Argument<F>>,
 }
 
 impl<F: SerdePrimeField> ConstraintSystem<F> {
@@ -218,6 +219,7 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
         writer.write_u32(self.num_challenges as u32)?;
         writer.write_u32(self.gates.len() as u32)?;
         writer.write_u32(self.lookups.len() as u32)?;
+        writer.write_u32(self.shuffles.len() as u32)?;
 
         for phase in &self.advice_column_phase {
             writer.write_u8(*phase)?;
@@ -257,6 +259,10 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
             lookup.write(writer, format)?;
         }
 
+        for shuffle in &self.shuffles {
+            shuffle.write(writer, format)?;
+        }
+
         Ok(())
     }
 
@@ -268,6 +274,7 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
         let num_challenges = reader.read_u32()? as usize;
         let num_gates = reader.read_u32()? as usize;
         let num_lookups = reader.read_u32()? as usize;
+        let num_shuffles = reader.read_u32()? as usize;
 
         let mut advice_column_phase = Vec::new();
         for _ in 0..num_advice_columns {
@@ -310,15 +317,19 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
 
         let permutation = permutation::Argument::read(reader)?;
 
-
         let mut gates = Vec::new();
         for _ in 0..num_gates {
-            gates.push(ExpressionPoly::read(reader, format).unwrap());
+            gates.push(ExpressionPoly::read(reader, format)?);
         }
 
         let mut lookups = Vec::new();
         for _ in 0..num_lookups {
             lookups.push(lookup::Argument::read(reader, format)?);
+        }
+
+        let mut shuffles = Vec::new();
+        for _ in 0..num_shuffles {
+            shuffles.push(shuffle::Argument::read(reader, format)?);
         }
 
         Ok(Self {
@@ -337,13 +348,14 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
             permutation,
             gates,
             lookups,
+            shuffles,
         })
     }
 }
 
 impl<F: Field> ConstraintSystem<F> {
     fn bytes_length(&self) -> usize {
-        20 + self.advice_column_phase.len() * 8
+        24 + self.advice_column_phase.len() * 8
             + self.challenge_phase.len() * 8
             + self.num_advice_queries.len() * 8
             + self.advice_queries.len() * 6
@@ -359,6 +371,11 @@ impl<F: Field> ConstraintSystem<F> {
                 .lookups
                 .iter()
                 .map(|lookup| lookup.bytes_length())
+                .sum::<usize>()
+            + self
+                .shuffles
+                .iter()
+                .map(|shuffle| shuffle.bytes_length())
                 .sum::<usize>()
     }
 
@@ -376,7 +393,7 @@ impl<F: Field> ConstraintSystem<F> {
             .advice_column_phase
             .iter()
             .max()
-            .map(|phase| *phase)
+            .copied()
             .unwrap_or_default();
         0..=max_phase
     }
@@ -525,7 +542,7 @@ impl<F: Field> ExpressionPoly<F> {
 
 #[inline]
 fn eval<F: Field>(coeff: &F, terms: &[(usize, usize)], var_access: impl Fn(usize) -> F) -> F {
-    let mut result = F::one();
+    let mut result = F::ONE;
     terms.iter().for_each(|term| {
         let var = &var_access(term.0);
         result *= var.pow_vartime([term.1 as u64, 0, 0, 0]);

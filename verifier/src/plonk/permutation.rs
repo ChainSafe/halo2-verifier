@@ -1,12 +1,18 @@
 use core::iter;
 
 use crate::{
-    arithmetic::{CurveAffine, Field, FieldExt}, helpers::{SerdeCurveAffine, SerdeFormat, ReadExt, WriteExt}, io, plonk::{
+    arithmetic::{CurveAffine, Field},
+    helpers::{ReadExt, SerdeCurveAffine, SerdeFormat, WriteExt},
+    io,
+    plonk::{
         circuit::{Any, Column},
         ChallengeBeta, ChallengeGamma, ChallengeX, Error,
-    }, poly::{commitment::MSM, Rotation, VerifierQuery}, transcript::{EncodedChallenge, TranscriptRead}
+    },
+    poly::{commitment::MSM, Rotation, VerifierQuery},
+    transcript::{EncodedChallenge, TranscriptRead},
 };
 use alloc::vec::Vec;
+use ff::PrimeField;
 
 /// A permutation argument.
 #[derive(Debug, Clone)]
@@ -16,10 +22,6 @@ pub struct Argument {
 }
 
 impl Argument {
-    pub(crate) fn new() -> Self {
-        Argument { columns: vec![] }
-    }
-
     pub(crate) fn bytes_length(&self) -> usize {
         self.columns.len() * Column::<Any>::bytes_length()
     }
@@ -178,7 +180,6 @@ impl<C: CurveAffine> VerifyingKey<C> {
     }
 }
 
-
 #[derive(Debug)]
 pub struct CommonEvaluated<C: CurveAffine> {
     pub permutation_evals: Vec<C::Scalar>,
@@ -205,9 +206,9 @@ impl<C: CurveAffine> Evaluated<C> {
             // Enforce only for the first set.
             // l_0(X) * (1 - z_0(X)) = 0
             .chain(
-                self.sets.first().map(|first_set| {
-                    l_0 * &(C::Scalar::one() - &first_set.permutation_product_eval)
-                }),
+                self.sets
+                    .first()
+                    .map(|first_set| l_0 * &(C::Scalar::ONE - &first_set.permutation_product_eval)),
             )
             // Enforce only for the last set.
             // l_last(X) * (z_l(X)^2 - z_l(X)) = 0
@@ -264,7 +265,8 @@ impl<C: CurveAffine> Evaluated<C> {
 
                         let mut right = set.permutation_product_eval;
                         let mut current_delta = (*beta * &*x)
-                            * &(C::Scalar::DELTA.pow_vartime(&[(chunk_index * chunk_len) as u64]));
+                            * &(<C::Scalar as PrimeField>::DELTA
+                                .pow_vartime(&[(chunk_index * chunk_len) as u64]));
                         for eval in columns.iter().map(|&column| match column.column_type() {
                             Any::Advice(_) => {
                                 advice_evals[vk.cs.get_any_query_index(column, Rotation::cur())]
@@ -280,7 +282,7 @@ impl<C: CurveAffine> Evaluated<C> {
                             current_delta *= &C::Scalar::DELTA;
                         }
 
-                        (left - &right) * (C::Scalar::one() - &(l_last + &l_blind))
+                        (left - &right) * (C::Scalar::ONE - &(l_last + &l_blind))
                     }),
             )
     }

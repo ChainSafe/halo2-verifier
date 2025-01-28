@@ -1,4 +1,6 @@
-use crate::arithmetic::{evaluate_vanishing_polynomial, powers, eval_polynomial, lagrange_interpolate,FieldExt};
+use crate::arithmetic::{
+    eval_polynomial, evaluate_vanishing_polynomial, lagrange_interpolate, powers, Field,
+};
 use crate::helpers::SerdeCurveAffine;
 use crate::poly::commitment::Verifier;
 use crate::poly::commitment::MSM;
@@ -13,8 +15,8 @@ use crate::transcript::{ChallengeScalar, EncodedChallenge, TranscriptRead};
 use alloc::{collections::BTreeSet, vec::Vec};
 use core::fmt::Debug;
 use core::ops::MulAssign;
-use ff::Field;
 use halo2curves::pairing::{Engine, MultiMillerLoop};
+use halo2curves::CurveExt;
 
 #[derive(Clone, Copy, Debug)]
 struct U {}
@@ -29,9 +31,9 @@ struct Y {}
 type ChallengeY<F> = ChallengeScalar<F, Y>;
 
 #[derive(Debug, Clone, PartialEq)]
-struct Commitment<F: FieldExt, T: PartialEq + Clone>((T, Vec<F>));
+struct Commitment<F: Field, T: PartialEq + Clone>((T, Vec<F>));
 
-impl<F: FieldExt, T: PartialEq + Clone> Commitment<F, T> {
+impl<F: Field, T: PartialEq + Clone> Commitment<F, T> {
     fn get(&self) -> T {
         self.0 .0.clone()
     }
@@ -42,18 +44,18 @@ impl<F: FieldExt, T: PartialEq + Clone> Commitment<F, T> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-struct RotationSet<F: FieldExt, T: PartialEq + Clone> {
+struct RotationSet<F: Field, T: PartialEq + Clone> {
     commitments: Vec<Commitment<F, T>>,
     points: Vec<F>,
 }
 
 #[derive(Debug, PartialEq)]
-struct IntermediateSets<F: FieldExt, Q: Query<F>> {
+struct IntermediateSets<F: Field, Q: Query<F>> {
     rotation_sets: Vec<RotationSet<F, Q::Commitment>>,
     super_point_set: BTreeSet<F>,
 }
 
-fn construct_intermediate_sets<F: FieldExt, I, Q: Query<F, Eval = F>>(
+fn construct_intermediate_sets<F: Field + Ord, I, Q: Query<F, Eval = F>>(
     queries: I,
 ) -> IntermediateSets<F, Q>
 where
@@ -155,7 +157,9 @@ pub struct VerifierSHPLONK<'params, E: Engine> {
 impl<'params, E> Verifier<'params, KZGCommitmentScheme<E>> for VerifierSHPLONK<'params, E>
 where
     E: MultiMillerLoop + Debug,
-    E::G1Affine: SerdeCurveAffine,
+    E::Fr: Ord,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = <E as Engine>::Fr, CurveExt = <E as Engine>::G1>,
+    E::G1: CurveExt<AffineExt = E::G1Affine>,
     E::G2Affine: SerdeCurveAffine,
 {
     type Guard = GuardKZG<'params, E>;
@@ -195,10 +199,10 @@ where
         let u: ChallengeU<_> = transcript.squeeze_challenge_scalar();
         let h2 = transcript.read_point().map_err(|_| Error::SamplingError)?;
 
-        let (mut z_0_diff_inverse, mut z_0) = (E::Scalar::zero(), E::Scalar::zero());
-        let (mut outer_msm, mut r_outer_acc) = (PreMSM::<E>::new(), E::Scalar::zero());
+        let (mut z_0_diff_inverse, mut z_0) = (E::Fr::ZERO, E::Fr::ZERO);
+        let (mut outer_msm, mut r_outer_acc) = (PreMSM::<E>::new(), E::Fr::ZERO);
         for (i, (rotation_set, power_of_v)) in rotation_sets.iter().zip(powers(*v)).enumerate() {
-            let diffs: Vec<E::Scalar> = super_point_set
+            let diffs: Vec<E::Fr> = super_point_set
                 .iter()
                 .filter(|point| !rotation_set.points.contains(point))
                 .copied()
@@ -209,7 +213,7 @@ where
             if i == 0 {
                 z_0 = evaluate_vanishing_polynomial(&rotation_set.points[..], *u);
                 z_0_diff_inverse = z_diff_i.invert().unwrap();
-                z_diff_i = E::Scalar::one();
+                z_diff_i = E::Fr::ONE;
             } else {
                 z_diff_i.mul_assign(z_0_diff_inverse);
             }
@@ -255,9 +259,7 @@ where
         outer_msm.append_term(-z_0, h1.into());
         outer_msm.append_term(*u, h2.into());
 
-        msm_accumulator
-            .left
-            .append_term(E::Scalar::one(), h2.into());
+        msm_accumulator.left.append_term(E::Fr::ONE, h2.into());
 
         msm_accumulator.right.add_msm(&outer_msm);
 

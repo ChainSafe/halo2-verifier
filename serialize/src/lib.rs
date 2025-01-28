@@ -1,5 +1,6 @@
 use halo2_proofs::arithmetic::Field;
-use halo2_verifier::plonk::{Advice, Column, ExpressionPoly, Fixed, Instance};
+use halo2_proofs::poly::commitment::Params;
+use halo2_verifier::plonk::{shuffle, Advice, Column, ExpressionPoly, Fixed, Instance};
 use halo2_verifier::poly::kzg::commitment::ParamsKZG;
 use halo2_verifier::poly::{EvaluationDomain, Rotation, SparsePolynomial, SparseTerm, Term};
 use halo2_verifier::{plonk::lookup, ConstraintSystem, VerifyingKey};
@@ -10,23 +11,25 @@ pub fn convert_verifier_key(
     vk: halo2_proofs::plonk::VerifyingKey<G1Affine>,
 ) -> VerifyingKey<G1Affine> {
     VerifyingKey {
-        domain: EvaluationDomain::new(vk.cs().degree() as u32, vk.domain.k()),
-        fixed_commitments: vk.fixed_commitments,
-        permutation: permutation::convert_permutation_vk(vk.permutation),
-        cs: convert_constraint_system(&vk.cs),
-        cs_degree: vk.cs_degree,
-        transcript_repr: vk.transcript_repr,
-        selectors: vk.selectors,
+        domain: EvaluationDomain::new(vk.cs().degree() as u32, vk.get_domain().k()),
+        fixed_commitments: vk.fixed_commitments().to_vec(),
+        permutation: permutation::convert_permutation_vk(vk.permutation().clone()),
+        cs: convert_constraint_system(vk.cs()),
+        cs_degree: vk.cs().degree(),
+        transcript_repr: vk.transcript_repr(),
+        selectors: vk.selectors().to_vec(),
     }
 }
 
-pub fn convert_params(params: halo2_proofs::poly::kzg::commitment::ParamsKZG<Bn256>) -> ParamsKZG<Bn256> {
+pub fn convert_params(
+    params: halo2_proofs::poly::kzg::commitment::ParamsKZG<Bn256>,
+) -> ParamsKZG<Bn256> {
     ParamsKZG {
-        k: params.k,
-        n: params.n,
-        g: params.g[0],
-        g2: params.g2,
-        s_g2: params.s_g2,
+        k: params.k(),
+        n: params.n(),
+        g: params.g()[0],
+        g2: params.g2(),
+        s_g2: params.s_g2(),
     }
 }
 
@@ -34,7 +37,7 @@ fn convert_constraint_system<F: Field + Ord>(
     cs: &halo2_proofs::plonk::ConstraintSystem<F>,
 ) -> ConstraintSystem<F> {
     let gates = cs
-        .gates
+        .gates()
         .iter()
         .flat_map(|gate| {
             gate.polynomials()
@@ -65,31 +68,48 @@ fn convert_constraint_system<F: Field + Ord>(
     //     .collect();
 
     let lookups = cs
-        .lookups
+        .lookups()
         .iter()
         .map(|lookup| lookup::Argument {
             input_expressions: lookup
-                .input_expressions
+                .input_expressions()
                 .iter()
                 .map(|expr| expression_transform(&cs, expr))
                 .collect(),
             table_expressions: lookup
-                .table_expressions
+                .table_expressions()
                 .iter()
                 .map(|expr| expression_transform(&cs, expr))
                 .collect(),
         })
         .collect();
 
+    let shuffles = cs
+        .shuffles()
+        .iter()
+        .map(|s| shuffle::Argument {
+            input_expressions: s
+                .input_expressions()
+                .iter()
+                .map(|e| expression_transform(cs, e))
+                .collect(),
+            shuffle_expressions: s
+                .shuffle_expressions()
+                .iter()
+                .map(|e| expression_transform(cs, e))
+                .collect(),
+        })
+        .collect();
+
     ConstraintSystem {
-        num_fixed_columns: cs.num_fixed_columns,
-        num_advice_columns: cs.num_advice_columns,
-        num_instance_columns: cs.num_instance_columns,
-        num_selectors: cs.num_selectors,
-        num_challenges: cs.num_challenges,
+        num_fixed_columns: cs.num_fixed_columns(),
+        num_advice_columns: cs.num_advice_columns(),
+        num_instance_columns: cs.num_instance_columns(),
+        num_selectors: cs.num_selectors(),
+        num_challenges: cs.num_challenges(),
         advice_column_phase: cs.advice_column_phase(),
         challenge_phase: cs.challenge_phase(),
-        num_advice_queries: cs.num_advice_queries.clone(),
+        num_advice_queries: cs.num_advice_queries().clone(),
         gates,
         advice_queries: cs
             .advice_queries()
@@ -102,8 +122,9 @@ fn convert_constraint_system<F: Field + Ord>(
             .map(convert_instance_query)
             .collect(),
         fixed_queries: cs.fixed_queries().iter().map(convert_fixed_query).collect(),
-        permutation: permutation::convert_permutation_argument(cs.permutation.clone()),
+        permutation: permutation::convert_permutation_argument(cs.permutation().clone()),
         lookups,
+        shuffles,
         // fields_pool,
     }
 }
@@ -120,7 +141,7 @@ mod permutation {
     ) -> Argument {
         Argument {
             columns: arg
-                .columns
+                .get_columns()
                 .into_iter()
                 .map(|col| Column {
                     index: col.index(),
@@ -138,7 +159,7 @@ mod permutation {
         vk: halo2_proofs::plonk::permutation::VerifyingKey<C>,
     ) -> VerifyingKey<C> {
         VerifyingKey {
-            commitments: vk.commitments,
+            commitments: vk.commitments().to_vec(),
         }
     }
 }
@@ -167,7 +188,7 @@ fn expression_transform<F: Field + Ord>(
             SparsePolynomial::from_coefficients_vec(
                 challenge_range,
                 vec![(
-                    F::one(),
+                    F::ONE,
                     SparseTerm::new(vec![(advice_range + query_index, 1)]),
                 )],
             )
@@ -177,7 +198,7 @@ fn expression_transform<F: Field + Ord>(
                 get_advice_query_index(cs, query.column_index(), query.phase(), query.rotation());
             SparsePolynomial::from_coefficients_vec(
                 challenge_range,
-                vec![(F::one(), SparseTerm::new(vec![(query_index, 1)]))],
+                vec![(F::ONE, SparseTerm::new(vec![(query_index, 1)]))],
             )
         },
         &|query| {
@@ -185,7 +206,7 @@ fn expression_transform<F: Field + Ord>(
             SparsePolynomial::from_coefficients_vec(
                 challenge_range,
                 vec![(
-                    F::one(),
+                    F::ONE,
                     SparseTerm::new(vec![(fixed_range + query_index, 1)]),
                 )],
             )
@@ -194,7 +215,7 @@ fn expression_transform<F: Field + Ord>(
             SparsePolynomial::from_coefficients_vec(
                 challenge_range,
                 vec![(
-                    F::one(),
+                    F::ONE,
                     SparseTerm::new(vec![(instance_range + challenge.index(), 1)]),
                 )],
             )

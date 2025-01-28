@@ -1,6 +1,6 @@
+use crate::io;
 use ff::PrimeField;
 use halo2curves::{serde::SerdeObject, CurveAffine};
-use crate::io;
 
 /// This enum specifies how various types are serialized and deserialized.
 #[derive(Clone, Copy, Debug)]
@@ -34,9 +34,9 @@ pub trait SerdeCurveAffine: CurveAffine + SerdeObject {
     /// Reads an element from the buffer and parses it according to the `format`:
     /// - `Processed`: Reads a compressed curve element and decompress it
     /// - `RawBytes`: Reads an uncompressed curve element with coordinates in Montgomery form.
-    /// Checks that field elements are less than modulus, and then checks that the point is on the curve.
+    ///   Checks that field elements are less than modulus, and then checks that the point is on the curve.
     /// - `RawBytesUnchecked`: Reads an uncompressed curve element with coordinates in Montgomery form;
-    /// does not perform any checks
+    ///   does not perform any checks
     fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         match format {
             SerdeFormat::Processed => <Self as CurveRead>::read(reader),
@@ -53,16 +53,23 @@ pub trait SerdeCurveAffine: CurveAffine + SerdeObject {
             _ => self.write_raw(writer),
         }
     }
+
+    /// Byte length of an affine curve element according to `format`.
+    fn byte_length(format: SerdeFormat) -> usize {
+        match format {
+            SerdeFormat::Processed => Self::default().to_bytes().as_ref().len(),
+            _ => Self::Repr::default().as_ref().len() * 2,
+        }
+    }
 }
 impl<C: CurveAffine + SerdeObject> SerdeCurveAffine for C {}
-
 
 pub trait SerdePrimeField: PrimeField + SerdeObject {
     /// Reads a field element as bytes from the buffer according to the `format`:
     /// - `Processed`: Reads a field element in standard form, with endianness specified by the
-    /// `PrimeField` implementation, and checks that the element is less than the modulus.
+    ///   `PrimeField` implementation, and checks that the element is less than the modulus.
     /// - `RawBytes`: Reads a field element from raw bytes in its internal Montgomery representations,
-    /// and checks that the element is less than the modulus.
+    ///   and checks that the element is less than the modulus.
     /// - `RawBytesUnchecked`: Reads a field element in Montgomery form and performs no checks.
     fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
         match format {
@@ -79,9 +86,9 @@ pub trait SerdePrimeField: PrimeField + SerdeObject {
 
     /// Writes a field element as bytes to the buffer according to the `format`:
     /// - `Processed`: Writes a field element in standard form, with endianness specified by the
-    /// `PrimeField` implementation.
+    ///   `PrimeField` implementation.
     /// - Otherwise: Writes a field element into raw bytes in its internal Montgomery representation,
-    /// WITHOUT performing the expensive Montgomery reduction.
+    ///   WITHOUT performing the expensive Montgomery reduction.
     fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
         match format {
             SerdeFormat::Processed => writer.write_all(self.to_repr().as_ref()),
@@ -109,8 +116,6 @@ pub fn unpack(byte: u8, bits: &mut [bool]) {
         *bit = (byte >> bit_index) & 1 == 1;
     }
 }
-
-
 
 pub trait ReadExt: io::Read {
     fn read_u32(&mut self) -> io::Result<u32> {

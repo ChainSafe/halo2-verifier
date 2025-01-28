@@ -6,6 +6,7 @@ use crate::transcript::ChallengeScalar;
 mod circuit;
 pub mod lookup;
 pub mod permutation;
+pub mod shuffle;
 pub(crate) mod vanishing;
 pub(crate) mod vk;
 

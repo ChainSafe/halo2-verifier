@@ -1,4 +1,3 @@
-use super::{LagrangeCoeff, Polynomial};
 use super::{query::VerifierQuery, strategy::Guard};
 use crate::poly::Error;
 use crate::transcript::{EncodedChallenge, TranscriptRead};
@@ -7,7 +6,7 @@ use core::{
     ops::{Add, AddAssign, Mul, MulAssign},
 };
 
-use halo2curves::{CurveAffine, FieldExt};
+use crate::arithmetic::{CurveAffine, Field};
 use rand_core::RngCore;
 
 use crate::io;
@@ -16,7 +15,7 @@ use alloc::vec::Vec;
 /// Defines components of a commitment scheme.
 pub trait CommitmentScheme {
     /// Application field of this commitment scheme
-    type Scalar: FieldExt + halo2curves::Group;
+    type Scalar: Field;
 
     /// Elliptic curve used to commit the application and witnesses
     type Curve: CurveAffine<ScalarExt = Self::Scalar>;
@@ -42,16 +41,6 @@ pub trait Params<'params, C: CurveAffine>: Sized + Clone {
     /// Generates an empty multiscalar multiplication struct using the
     /// appropriate params.
     fn empty_msm(&'params self) -> Self::MSM;
-
-        /// This commits to a polynomial using its evaluations over the $2^k$ size
-    /// evaluation domain. The commitment will be blinded by the blinding factor
-    /// `r`.
-    // fn commit_lagrange(
-    //     &self,
-    //     poly: &Polynomial<C::ScalarExt, LagrangeCoeff>,
-    //     r: Blind<C::ScalarExt>,
-    // ) -> C::CurveExt;
-
 
     /// Writes params to a buffer.
     fn write<W: io::Write>(&self, writer: &mut W) -> io::Result<()>;
@@ -131,20 +120,20 @@ pub trait Verifier<'params, Scheme: CommitmentScheme> {
 #[derive(Copy, Clone, Eq, PartialEq, Debug)]
 pub struct Blind<F>(pub F);
 
-impl<F: FieldExt> Default for Blind<F> {
+impl<F: Field> Default for Blind<F> {
     fn default() -> Self {
-        Blind(F::one())
+        Blind(F::ONE)
     }
 }
 
-impl<F: FieldExt> Blind<F> {
+impl<F: Field> Blind<F> {
     /// Given `rng` creates new blinding scalar
     pub fn new<R: RngCore>(rng: &mut R) -> Self {
         Blind(F::random(rng))
     }
 }
 
-impl<F: FieldExt> Add for Blind<F> {
+impl<F: Field> Add for Blind<F> {
     type Output = Self;
 
     fn add(self, rhs: Blind<F>) -> Self {
@@ -152,7 +141,7 @@ impl<F: FieldExt> Add for Blind<F> {
     }
 }
 
-impl<F: FieldExt> Mul for Blind<F> {
+impl<F: Field> Mul for Blind<F> {
     type Output = Self;
 
     fn mul(self, rhs: Blind<F>) -> Self {
@@ -160,25 +149,25 @@ impl<F: FieldExt> Mul for Blind<F> {
     }
 }
 
-impl<F: FieldExt> AddAssign for Blind<F> {
+impl<F: Field> AddAssign for Blind<F> {
     fn add_assign(&mut self, rhs: Blind<F>) {
         self.0 += rhs.0;
     }
 }
 
-impl<F: FieldExt> MulAssign for Blind<F> {
+impl<F: Field> MulAssign for Blind<F> {
     fn mul_assign(&mut self, rhs: Blind<F>) {
         self.0 *= rhs.0;
     }
 }
 
-impl<F: FieldExt> AddAssign<F> for Blind<F> {
+impl<F: Field> AddAssign<F> for Blind<F> {
     fn add_assign(&mut self, rhs: F) {
         self.0 += rhs;
     }
 }
 
-impl<F: FieldExt> MulAssign<F> for Blind<F> {
+impl<F: Field> MulAssign<F> for Blind<F> {
     fn mul_assign(&mut self, rhs: F) {
         self.0 *= rhs;
     }

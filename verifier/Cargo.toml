@@ -12,7 +12,6 @@ blake2b_simd = { version = "1", default-features = false }
 sha3 = { version = "0.9.1", default-features = false }
 substrate-bn = "0.6.0"
 serde_json = { version = "1.0.117", optional = true, default-features = false }
-# halo2_proofs = { git = "https://github.com/nulltea/halo2-nostd.git", branch = "no_std" }
 ff.workspace = true
 group.workspace = true
 rand_core = { version = "0.6", default-features = false }

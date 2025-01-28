@@ -8,16 +8,12 @@ use crate::poly::kzg::strategy::GuardKZG;
 use crate::poly::query::{CommitmentReference, VerifierQuery};
 use crate::poly::Error;
 use crate::transcript::{EncodedChallenge, TranscriptRead};
-use crate::{
-    arithmetic::FieldExt,
-    poly::query::Query,
-    transcript::ChallengeScalar,
-};
+use crate::{arithmetic::Field, poly::query::Query, transcript::ChallengeScalar};
 use alloc::vec::Vec;
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use ff::Field;
 use halo2curves::pairing::{Engine, MultiMillerLoop};
+use halo2curves::CurveExt;
 
 #[derive(Clone, Copy, Debug)]
 struct U {}
@@ -27,7 +23,7 @@ type ChallengeU<F> = ChallengeScalar<F, U>;
 struct V {}
 type ChallengeV<F> = ChallengeScalar<F, V>;
 
-struct CommitmentData<F: FieldExt, Q: Query<F>> {
+struct CommitmentData<F: Field, Q: Query<F>> {
     queries: Vec<Q>,
     point: F,
     _marker: PhantomData<F>,
@@ -42,7 +38,8 @@ pub struct VerifierGWC<'params, E: Engine> {
 impl<'params, E> Verifier<'params, KZGCommitmentScheme<E>> for VerifierGWC<'params, E>
 where
     E: MultiMillerLoop + Debug,
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = <E as Engine>::Fr, CurveExt = <E as Engine>::G1>,
+    E::G1: CurveExt<AffineExt = E::G1Affine>,
     E::G2Affine: SerdeCurveAffine,
 {
     type Guard = GuardKZG<'params, E>;
@@ -79,7 +76,7 @@ where
         let u: ChallengeU<_> = transcript.squeeze_challenge_scalar();
 
         let mut commitment_multi = MSMKZG::<E>::new();
-        let mut eval_multi = E::Scalar::zero();
+        let mut eval_multi = E::Fr::ZERO;
 
         let mut witness = MSMKZG::<E>::new();
         let mut witness_with_aux = MSMKZG::<E>::new();
@@ -138,7 +135,7 @@ where
     }
 }
 
-fn construct_intermediate_sets<F: FieldExt, I, Q: Query<F>>(queries: I) -> Vec<CommitmentData<F, Q>>
+fn construct_intermediate_sets<F: Field, I, Q: Query<F>>(queries: I) -> Vec<CommitmentData<F, Q>>
 where
     I: IntoIterator<Item = Q> + Clone,
 {

@@ -5,7 +5,7 @@ use super::{
 use blake2b_simd::{Params as Blake2bParams, State as Blake2bState};
 use ff::Field;
 use group::ff::PrimeField;
-use halo2curves::{Coordinates, CurveAffine, FieldExt};
+use halo2curves::{Coordinates, CurveAffine, Field};
 use num_bigint::BigUint;
 use core::convert::TryInto;
 use crate::io::{self, Read, Write};
@@ -70,7 +70,7 @@ impl<R: Read, C: CurveAffine> TranscriptRead<C, Challenge255<C>>
             Some(p) => p,
             // TODO: check that this is actually safe to push an
             // identity point to the transcript
-            None => C::Scalar::zero(),
+            None => C::Scalar::ZERO,
         };
         self.common_scalar(scalar)?;
 
@@ -103,7 +103,7 @@ impl<R: Read, C: CurveAffine> Transcript<C, Challenge255<C>>
             }
             None => {
                 // Infinity point
-                self.state.update(C::Base::zero().to_repr().as_ref());
+                self.state.update(C::Base::ZERO.to_repr().as_ref());
                 self.state.update(C::Base::from(5).to_repr().as_ref());
             }
         }

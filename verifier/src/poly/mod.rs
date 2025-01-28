@@ -7,7 +7,6 @@ mod strategy;
 /// KZG commitment scheme
 pub mod kzg;
 
-
 use core::{fmt, marker::PhantomData, ops::*};
 
 pub use domain::*;
@@ -34,7 +33,6 @@ pub trait Basis: Copy + fmt::Debug + Send + Sync {}
 #[derive(Clone, Copy, Debug)]
 pub struct LagrangeCoeff;
 impl Basis for LagrangeCoeff {}
-
 
 /// Represents a univariate polynomial defined over a field and a particular
 /// basis.

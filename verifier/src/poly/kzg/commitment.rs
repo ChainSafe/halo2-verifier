@@ -1,15 +1,14 @@
-use crate::arithmetic::{best_multiexp, parallelize, FieldExt};
+use crate::arithmetic::{parallelize, Field};
 use crate::helpers::SerdeCurveAffine;
 use crate::helpers::SerdeFormat;
-use crate::poly::commitment::{Blind, CommitmentScheme, Params, ParamsVerifier};
-use crate::poly::{LagrangeCoeff, Polynomial};
+use crate::poly::commitment::{CommitmentScheme, Params, ParamsVerifier};
 use alloc::vec::Vec;
 use group::GroupEncoding;
-use halo2curves::Group;
+use halo2curves::CurveExt;
 
+use crate::arithmetic::{Group, PrimeField};
 use core::fmt::Debug;
 use core::marker::PhantomData;
-use ff::{Field, PrimeField};
 use group::{prime::PrimeCurveAffine, Curve};
 use halo2curves::pairing::Engine;
 use rand_core::RngCore;
@@ -37,44 +36,37 @@ pub struct KZGCommitmentScheme<E: Engine> {
 
 impl<E: Engine + Debug> CommitmentScheme for KZGCommitmentScheme<E>
 where
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = <E as Engine>::Fr, CurveExt = <E as Engine>::G1>,
+    E::G1: CurveExt<AffineExt = E::G1Affine>,
     E::G2Affine: SerdeCurveAffine,
 {
-    type Scalar = E::Scalar;
+    type Scalar = E::Fr;
     type Curve = E::G1Affine;
 
     type ParamsVerifier = ParamsVerifierKZG<E>;
 }
 
-impl<E: Engine + Debug> ParamsKZG<E> {
+impl<E: Engine + Debug> ParamsKZG<E>
+where
+    E::G1Affine: SerdeCurveAffine,
+    E::G1: CurveExt<AffineExt = E::G1Affine>,
+{
     /// Initializes parameters for the curve, draws toxic secret from given rng.
     /// MUST NOT be used in production.
     pub fn setup<R: RngCore>(k: u32, rng: R) -> Self {
-        let s = <E::Scalar>::random(rng);
-        Self::unsafe_setup_with_s(k, s)
-    }
-
-    /// Initializes parameters for the curve, Draws random toxic point inside of the function
-    /// MUST NOT be used in production
-    pub fn unsafe_setup(k: u32) -> Self {
-        let s = E::Scalar::random(crate::get_rng());
-        Self::unsafe_setup_with_s(k, s)
-    }
-
-    /// Initializes parameters for the curve, using given random `s`
-    /// MUST NOT be used in production
-    pub fn unsafe_setup_with_s(k: u32, s: <E as Engine>::Scalar) -> Self {
-        // Largest root of unity exponent of the Engine is `2^E::Scalar::S`, so we can
-        // only support FFTs of polynomials below degree `2^E::Scalar::S`.
-        assert!(k <= E::Scalar::S);
+        // Largest root of unity exponent of the Engine is `2^E::Fr::S`, so we can
+        // only support FFTs of polynomials below degree `2^E::Fr::S`.
+        assert!(k <= E::Fr::S);
         let n: u64 = 1 << k;
 
         // Calculate g = [G1, [s] G1, [s^2] G1, ..., [s^(n-1)] G1] in parallel.
         let g1 = E::G1Affine::generator();
-        let mut g_projective = vec![E::G1::group_zero(); n as usize];
+        let s = <E::Fr>::random(rng);
+
+        let mut g_projective = vec![E::G1::identity(); n as usize];
         parallelize(&mut g_projective, |g, start| {
             let mut current_g: E::G1 = g1.into();
-            current_g *= s.pow_vartime(&[start as u64]);
+            current_g *= s.pow_vartime([start as u64]);
             for g in g.iter_mut() {
                 *g = current_g;
                 current_g *= s;
@@ -86,21 +78,22 @@ impl<E: Engine + Debug> ParamsKZG<E> {
             parallelize(&mut g, |g, starts| {
                 E::G1::batch_normalize(&g_projective[starts..(starts + g.len())], g);
             });
-            g[0]
+            g
         };
 
-        let mut g_lagrange_projective = vec![E::G1::group_zero(); n as usize];
-        let mut root = E::Scalar::ROOT_OF_UNITY_INV.invert().unwrap();
-        for _ in k..E::Scalar::S {
+        let mut g_lagrange_projective = vec![E::G1::identity(); n as usize];
+        let mut root = E::Fr::ROOT_OF_UNITY;
+        for _ in k..E::Fr::S {
             root = root.square();
         }
-        let n_inv = Option::<E::Scalar>::from(E::Scalar::from(n).invert())
+        let n_inv = E::Fr::from(n)
+            .invert()
             .expect("inversion should be ok for n = 1<<k");
-        let multiplier = (s.pow_vartime(&[n as u64]) - E::Scalar::one()) * n_inv;
+        let multiplier = (s.pow_vartime([n]) - E::Fr::ONE) * n_inv;
         parallelize(&mut g_lagrange_projective, |g, start| {
             for (idx, g) in g.iter_mut().enumerate() {
                 let offset = start + idx;
-                let root_pow = root.pow_vartime(&[offset as u64]);
+                let root_pow = root.pow_vartime([offset as u64]);
                 let scalar = multiplier * root_pow * (s - root_pow).invert().unwrap();
                 *g = g1 * scalar;
             }
@@ -112,8 +105,7 @@ impl<E: Engine + Debug> ParamsKZG<E> {
         Self {
             k,
             n,
-            g,
-            // g_lagrange,
+            g: g[0],
             g2,
             s_g2,
         }
@@ -215,8 +207,8 @@ impl<E: Engine + Debug> ParamsKZG<E> {
     }
 
     pub fn bytes_length() -> usize {
-        E::G1Affine::default().to_bytes().as_ref().len()
-            + E::G2Affine::default().to_bytes().as_ref().len() * 2
+        E::G1Affine::identity().to_bytes().as_ref().len()
+            + E::G2Affine::identity().to_bytes().as_ref().len() * 2
             + 4
     }
 
@@ -226,7 +218,8 @@ impl<E: Engine + Debug> ParamsKZG<E> {
         E::G2Affine: SerdeCurveAffine,
     {
         let mut bytes = Vec::<u8>::with_capacity(Self::bytes_length());
-        Self::write_custom(self, &mut bytes, SerdeFormat::Processed).expect("Writing to vector should not fail");
+        Self::write_custom(self, &mut bytes, SerdeFormat::Processed)
+            .expect("Writing to vector should not fail");
         bytes
     }
 
@@ -246,7 +239,8 @@ pub type ParamsVerifierKZG<C> = ParamsKZG<C>;
 
 impl<'params, E: Engine + Debug> Params<'params, E::G1Affine> for ParamsKZG<E>
 where
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = <E as Engine>::Fr, CurveExt = <E as Engine>::G1>,
+    E::G1: CurveExt<AffineExt = E::G1Affine>,
     E::G2Affine: SerdeCurveAffine,
 {
     type MSM = MSMKZG<E>;
@@ -286,7 +280,8 @@ where
 
 impl<'params, E: Engine + Debug> ParamsVerifier<'params, E::G1Affine> for ParamsKZG<E>
 where
-    E::G1Affine: SerdeCurveAffine,
+    E::G1Affine: SerdeCurveAffine<ScalarExt = <E as Engine>::Fr, CurveExt = <E as Engine>::G1>,
+    E::G1: CurveExt<AffineExt = E::G1Affine>,
     E::G2Affine: SerdeCurveAffine,
 {
 }

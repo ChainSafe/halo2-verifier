@@ -2,19 +2,18 @@
 use ff::Field;
 use num_traits::Zero;
 //use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use alloc::vec::Vec;
 use core::ops::{Deref, Mul, MulAssign};
 use core::{
     cmp::Ordering,
     fmt,
     ops::{Add, AddAssign, Neg, Sub, SubAssign},
 };
-use alloc::vec::Vec;
 
 /// Stores a sparse multivariate polynomial in coefficient form.
 #[derive(Clone)]
 pub struct SparsePolynomial<F, T: Term> {
     /// The number of variables the polynomial supports
-
     pub num_vars: usize,
     /// List of each term along with its coefficient
     pub terms: Vec<(F, T)>,
@@ -31,7 +30,6 @@ impl<F: Field, T: Term> SparsePolynomial<F, T> {
 }
 
 impl<F> SparsePolynomial<F, SparseTerm> {
-
     /// Returns the total degree of the polynomial
     ///
     /// # Examples
@@ -56,27 +54,24 @@ impl<F> SparsePolynomial<F, SparseTerm> {
             .unwrap_or(0)
     }
 
-
-    pub fn evaluate<R>(&self, term_eval: impl Fn(&(F, SparseTerm)) -> R, term_add: impl Fn(R, R) -> R) -> R {
+    pub fn evaluate<R>(
+        &self,
+        term_eval: impl Fn(&(F, SparseTerm)) -> R,
+        term_add: impl Fn(R, R) -> R,
+    ) -> R {
         let term_len = self.terms.len();
-        let mut result = term_eval(&self.terms.get(0).unwrap());
+        let mut result = term_eval(self.terms.first().unwrap());
         let mut i = 1;
         while i < term_len {
-            let r = term_eval(&self.terms.get(i).unwrap());
-            i = i + 1;
+            let r = term_eval(self.terms.get(i).unwrap());
+            i += 1;
             result = term_add(result, r);
-        };
+        }
         result
     }
 }
 
 impl<F: Field + Ord> SparsePolynomial<F, SparseTerm> {
-    /// Returns the number of variables in `self`
-    fn num_vars(&self) -> usize {
-        self.num_vars
-    }
-
-
     pub fn from_coefficients_vec(num_vars: usize, mut terms: Vec<(F, SparseTerm)>) -> Self {
         // Ensure that terms are in ascending order.
         terms.sort_by(|(_, t1), (_, t2)| t1.cmp(t2));
@@ -110,7 +105,6 @@ impl<F: Field + Ord> SparsePolynomial<F, SparseTerm> {
     //     self.terms.as_slice()
     // }
 }
-
 
 impl<F: Field, T: Term> Add for SparsePolynomial<F, T> {
     type Output = SparsePolynomial<F, T>;
@@ -285,7 +279,6 @@ impl<'a, F: Field + Ord, T: Term> MulAssign<&'a F> for SparsePolynomial<F, T> {
     }
 }
 
-
 /// Describes the interface for a term (monomial) of a multivariate polynomial.
 pub trait Term:
 Clone
@@ -387,7 +380,6 @@ impl Term for SparseTerm {
     // }
 }
 
-
 impl Deref for SparseTerm {
     type Target = [(usize, usize)];
 
@@ -396,6 +388,7 @@ impl Deref for SparseTerm {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for SparseTerm {
     /// Sort by total degree. If total degree is equal then ordering
     /// is given by exponent weight in lower-numbered variables

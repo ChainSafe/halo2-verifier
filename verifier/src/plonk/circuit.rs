@@ -1,4 +1,7 @@
-use crate::{io, helpers::{ReadExt, WriteExt}};
+use crate::{
+    helpers::{ReadExt, WriteExt},
+    io,
+};
 
 pub trait ColumnType:
     'static + Sized + Copy + core::fmt::Debug + PartialEq + Eq + Into<Any>
@@ -78,25 +81,15 @@ pub enum Any {
 }
 
 /// An advice column
-#[derive(Clone, Copy, Eq, PartialEq, Hash)]
+#[derive(Clone, Copy, Default, Eq, PartialEq, Hash)]
 pub struct Advice {
     pub(crate) phase: u8,
-}
-
-impl Default for Advice {
-    fn default() -> Advice {
-        Advice {
-            phase: 0,
-        }
-    }
 }
 
 impl Advice {
     /// Returns `Advice` in given `Phase`
     pub fn new(phase: u8) -> Advice {
-        Advice {
-            phase
-        }
+        Advice { phase }
     }
 
     /// Phase of this column
@@ -123,7 +116,6 @@ pub struct Fixed;
 /// An instance column
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash)]
 pub struct Instance;
-
 
 impl ColumnType for Advice {}
 impl ColumnType for Fixed {}
