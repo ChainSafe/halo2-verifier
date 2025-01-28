@@ -540,7 +540,9 @@ impl IndexedExpressionPoly {
             }
             terms.push((coeff, SparseTerm(term_vars)));
         }
-        Ok(IndexedExpressionPoly(SparsePolynomial::new(num_vars, terms)))
+        Ok(IndexedExpressionPoly(SparsePolynomial::new(
+            num_vars, terms,
+        )))
     }
 
     pub fn bytes_length(&self) -> usize {

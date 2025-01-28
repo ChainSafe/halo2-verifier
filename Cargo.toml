@@ -1,5 +1,5 @@
 [workspace]
-members = ["serialize", "verifier"]
+members = ["serialize", "halo2_verifier"]
 
 resolver = "2"
 

@@ -158,8 +158,8 @@ where
     fn read_point(&mut self) -> io::Result<C> {
         let mut compressed = C::Repr::default();
         self.reader.read_exact(compressed.as_mut())?;
-        let point: C = Option::from(C::from_bytes(&compressed))
-            .ok_or("invalid point encoding in proof")?;
+        let point: C =
+            Option::from(C::from_bytes(&compressed)).ok_or("invalid point encoding in proof")?;
         self.common_point(point)?;
 
         Ok(point)
@@ -184,8 +184,8 @@ where
     fn read_point(&mut self) -> io::Result<C> {
         let mut compressed = C::Repr::default();
         self.reader.read_exact(compressed.as_mut())?;
-        let point: C = Option::from(C::from_bytes(&compressed))
-            .ok_or("invalid point encoding in proof")?;
+        let point: C =
+            Option::from(C::from_bytes(&compressed)).ok_or("invalid point encoding in proof")?;
         self.common_point(point)?;
 
         Ok(point)

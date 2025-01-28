@@ -8,7 +8,7 @@ ff.workspace = true
 group.workspace = true
 halo2_proofs.workspace = true
 halo2curves.workspace = true
-halo2_verifier = { path = "../verifier" }
+halo2_verifier = { path = "../halo2_verifier" }
 
 [dev-dependencies]
 hex = { version = "0.4" }

@@ -22,7 +22,10 @@ pub struct Argument<F: Field> {
 }
 
 impl<F: Field> Argument<F> {
-    pub fn new(input_expressions: Vec<IndexedExpressionPoly>, table_expressions: Vec<IndexedExpressionPoly>) -> Self {
+    pub fn new(
+        input_expressions: Vec<IndexedExpressionPoly>,
+        table_expressions: Vec<IndexedExpressionPoly>,
+    ) -> Self {
         Self {
             input_expressions,
             table_expressions,
