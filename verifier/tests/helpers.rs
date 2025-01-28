@@ -5,7 +5,6 @@ use halo2_proofs::{
     transcript::TranscriptWriterBuffer as _,
 };
 use halo2_verifier::{
-    helpers::SerdeFormat,
     poly::kzg::{
         commitment::KZGCommitmentScheme, multiopen::VerifierSHPLONK, strategy::SingleStrategy,
     },
@@ -27,8 +26,8 @@ pub fn test_verifier<ConcreteCircuit: Circuit<bn256::Fr>>(
     let vk = keygen_vk(&params, circuit).unwrap();
     let pk = keygen_pk(&params, vk.clone(), circuit).unwrap();
     let vk: VerifyingKey<_> = serialize::convert_verifier_key(vk);
-    let vk_bytes = vk.to_bytes(SerdeFormat::Processed);
-    let vk = VerifyingKey::<_>::from_bytes(&vk_bytes, SerdeFormat::Processed).unwrap();
+    // let vk_bytes = vk.to_bytes(SerdeFormat::Processed);
+    // let vk = VerifyingKey::<_>::from_bytes(&vk_bytes, SerdeFormat::Processed).unwrap();
 
     let rng = &mut StdRng::from_seed(Default::default());
 

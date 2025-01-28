@@ -1,5 +1,3 @@
-use core::marker::PhantomData;
-
 use crate::{
     arithmetic::{CurveAffine, Field},
     helpers::{ReadExt, SerdeCurveAffine, SerdeFormat, SerdePrimeField, WriteExt},
@@ -188,7 +186,7 @@ pub struct ConstraintSystem<F: Field> {
     /// fixed column that they were compressed into. This is just used by dev
     /// tooling right now.
     // pub(crate) selector_map: Vec<Column<Fixed>>,
-    pub gates: Vec<ExpressionPoly<F>>,
+    pub gates: Vec<IndexedExpressionPoly>,
 
     // Contains an integer for each advice column
     // identifying how many distinct queries it has
@@ -208,6 +206,8 @@ pub struct ConstraintSystem<F: Field> {
     // Vector of shuffle arguments, where each corresponds to a sequence of
     // input expressions and a sequence of shuffle expressions involved in the shuffle.
     pub shuffles: Vec<shuffle::Argument<F>>,
+
+    pub coeff_vals: Vec<F>,
 }
 
 impl<F: SerdePrimeField> ConstraintSystem<F> {
@@ -220,6 +220,7 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
         writer.write_u32(self.gates.len() as u32)?;
         writer.write_u32(self.lookups.len() as u32)?;
         writer.write_u32(self.shuffles.len() as u32)?;
+        writer.write_u32(self.coeff_vals.len() as u32)?;
 
         for phase in &self.advice_column_phase {
             writer.write_u8(*phase)?;
@@ -263,6 +264,10 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
             shuffle.write(writer, format)?;
         }
 
+        for value in &self.coeff_vals {
+            value.write(writer, format)?;
+        }
+
         Ok(())
     }
 
@@ -275,6 +280,7 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
         let num_gates = reader.read_u32()? as usize;
         let num_lookups = reader.read_u32()? as usize;
         let num_shuffles = reader.read_u32()? as usize;
+        let num_coeff_vals = reader.read_u32()? as usize;
 
         let mut advice_column_phase = Vec::new();
         for _ in 0..num_advice_columns {
@@ -319,7 +325,7 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
 
         let mut gates = Vec::new();
         for _ in 0..num_gates {
-            gates.push(ExpressionPoly::read(reader, format)?);
+            gates.push(IndexedExpressionPoly::read(reader, format)?);
         }
 
         let mut lookups = Vec::new();
@@ -330,6 +336,11 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
         let mut shuffles = Vec::new();
         for _ in 0..num_shuffles {
             shuffles.push(shuffle::Argument::read(reader, format)?);
+        }
+
+        let mut coeff_vals: Vec<F> = Vec::new();
+        for _ in 0..num_coeff_vals {
+            coeff_vals.push(F::read(reader, format)?);
         }
 
         Ok(Self {
@@ -349,6 +360,7 @@ impl<F: SerdePrimeField> ConstraintSystem<F> {
             gates,
             lookups,
             shuffles,
+            coeff_vals,
         })
     }
 }
@@ -446,62 +458,26 @@ impl<F: Field> ConstraintSystem<F> {
 #[derive(Clone, Debug)]
 pub struct ExpressionPoly<F: Field>(SparsePolynomial<F, SparseTerm>);
 
-#[derive(Clone, Debug)]
-pub struct IndexedExpressionPoly<F: Field>(SparsePolynomial<F, SparseTerm>, PhantomData<F>);
+#[derive(Clone)]
+pub struct IndexedExpressionPoly(SparsePolynomial<u16, SparseTerm>);
 
-impl<F: Field> From<SparsePolynomial<F, SparseTerm>> for ExpressionPoly<F> {
-    fn from(poly: SparsePolynomial<F, SparseTerm>) -> Self {
-        ExpressionPoly(poly)
-    }
-}
-
-impl<F: SerdePrimeField> ExpressionPoly<F> {
-    pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()> {
-        writer.write_u32(self.0.num_vars as u32)?;
-        writer.write_u32(self.0.terms.len() as u32)?;
-        for (coeff, term) in &self.0.terms {
-            coeff.write(writer, format)?;
-            writer.write_u32(term.0.len() as u32)?;
-            for (var, pow) in &term.0 {
-                writer.write_u32(*var as u32)?;
-                writer.write_u32(*pow as u32)?;
-            }
+impl core::fmt::Debug for IndexedExpressionPoly {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> Result<(), core::fmt::Error> {
+        for (coeff, term) in self.0.terms.iter().filter(|(c, _)| *c != 0) {
+            write!(f, "\n{:?} {:?}", coeff, term)?;
         }
         Ok(())
     }
-
-    pub fn read<R: io::Read>(reader: &mut R, format: SerdeFormat) -> io::Result<Self> {
-        let num_vars = reader.read_u32()? as usize;
-        let num_terms = reader.read_u32()? as usize;
-        let mut terms = Vec::with_capacity(num_terms);
-        for _ in 0..num_terms {
-            let coeff = F::read(reader, format)?;
-            let mut term_vars = Vec::with_capacity(num_vars);
-            let term_num_vars = reader.read_u32()? as usize;
-            for _ in 0..term_num_vars {
-                let var = reader.read_u32()? as usize;
-                let pow = reader.read_u32()? as usize;
-                term_vars.push((var, pow));
-            }
-            terms.push((coeff, SparseTerm(term_vars)));
-        }
-        Ok(ExpressionPoly(SparsePolynomial::new(num_vars, terms)))
-    }
 }
 
-impl<F: Field> ExpressionPoly<F> {
-    pub fn bytes_length(&self) -> usize {
-        8 + self
-            .0
-            .terms
-            .iter()
-            .map(|(_, term)| 36 + (term.0.len() + 16))
-            .sum::<usize>()
+impl IndexedExpressionPoly {
+    pub fn new(poly: SparsePolynomial<u16, SparseTerm>) -> Self {
+        IndexedExpressionPoly(poly)
     }
 
-    pub fn evaluate(
+    pub fn evaluate<F: Field>(
         &self,
-        // coeffs: &Vec<F>,
+        coeffs: &[F],
         advice_evals: &[F],
         fixed_evals: &[F],
         instance_evals: &[F],
@@ -514,9 +490,9 @@ impl<F: Field> ExpressionPoly<F> {
 
         self.0.evaluate(
             |term| {
-                let coeff = term.0;
+                let coeff_idx = term.0;
                 let sparse_term = &term.1;
-                // let coeff = &coeffs[coeff_idx as usize];
+                let coeff = coeffs[coeff_idx as usize];
                 eval(&coeff, &sparse_term.0, |idx| {
                     if idx < advice_range {
                         advice_evals[idx]
@@ -533,6 +509,63 @@ impl<F: Field> ExpressionPoly<F> {
             },
             |a, b| a + b,
         )
+    }
+
+    pub fn write<W: io::Write>(&self, writer: &mut W, _: SerdeFormat) -> io::Result<()> {
+        writer.write_u32(self.0.num_vars as u32)?;
+        writer.write_u32(self.0.terms.len() as u32)?;
+        for (coeff, term) in &self.0.terms {
+            writer.write_u16(*coeff as u16)?;
+            writer.write_u32(term.0.len() as u32)?;
+            for (var, pow) in &term.0 {
+                writer.write_u32(*var as u32)?;
+                writer.write_u32(*pow as u32)?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn read<R: io::Read>(reader: &mut R, _: SerdeFormat) -> io::Result<Self> {
+        let num_vars = reader.read_u32()? as usize;
+        let num_terms = reader.read_u32()? as usize;
+        let mut terms = Vec::with_capacity(num_terms);
+        for _ in 0..num_terms {
+            let coeff = reader.read_u16()?;
+            let mut term_vars = Vec::with_capacity(num_vars);
+            let term_num_vars = reader.read_u32()? as usize;
+            for _ in 0..term_num_vars {
+                let var = reader.read_u32()? as usize;
+                let pow = reader.read_u32()? as usize;
+                term_vars.push((var, pow));
+            }
+            terms.push((coeff, SparseTerm(term_vars)));
+        }
+        Ok(IndexedExpressionPoly(SparsePolynomial::new(num_vars, terms)))
+    }
+
+    pub fn bytes_length(&self) -> usize {
+        8 + self
+            .0
+            .terms
+            .iter()
+            .map(|(_, term)| 6 + term.0.len() + 16)
+            .sum::<usize>()
+    }
+}
+
+impl<F: Field> From<SparsePolynomial<F, SparseTerm>> for ExpressionPoly<F> {
+    fn from(poly: SparsePolynomial<F, SparseTerm>) -> Self {
+        ExpressionPoly(poly)
+    }
+}
+
+impl<F: Field> ExpressionPoly<F> {
+    pub fn num_vars(&self) -> usize {
+        self.0.num_vars
+    }
+
+    pub fn terms(&self) -> &Vec<(F, SparseTerm)> {
+        &self.0.terms
     }
 
     pub fn degree(&self) -> usize {

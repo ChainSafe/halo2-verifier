@@ -1,18 +1,24 @@
-use super::{ChallengeGamma, ChallengeTheta, ChallengeX, Error, ExpressionPoly, VerifyingKey};
+use super::{
+    ChallengeGamma, ChallengeTheta, ChallengeX, Error, IndexedExpressionPoly, VerifyingKey,
+};
 use crate::{
     helpers::{ReadExt, SerdeFormat, SerdePrimeField, WriteExt},
     poly::{commitment::MSM, Rotation, VerifierQuery},
     transcript::{EncodedChallenge, TranscriptRead},
 };
 use alloc::vec::Vec;
-use core::fmt::{self, Debug};
+use core::{
+    fmt::{self, Debug},
+    marker::PhantomData,
+};
 use ff::Field;
 use halo2curves::{io, CurveAffine};
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Argument<F: Field> {
-    pub input_expressions: Vec<ExpressionPoly<F>>,
-    pub shuffle_expressions: Vec<ExpressionPoly<F>>,
+    pub input_expressions: Vec<IndexedExpressionPoly>,
+    pub shuffle_expressions: Vec<IndexedExpressionPoly>,
+    _marker: PhantomData<F>,
 }
 
 impl<F: Field> Debug for Argument<F> {
@@ -28,21 +34,24 @@ impl<F: Field> Argument<F> {
     /// Constructs a new shuffle argument.
     ///
     /// `shuffle` is a sequence of `(input, shuffle)` tuples.
-    pub fn new(shuffle: Vec<(ExpressionPoly<F>, ExpressionPoly<F>)>) -> Self {
-        let (input_expressions, shuffle_expressions) = shuffle.into_iter().unzip();
+    pub fn new(
+        input_expressions: Vec<IndexedExpressionPoly>,
+        shuffle_expressions: Vec<IndexedExpressionPoly>,
+    ) -> Self {
         Argument {
             input_expressions,
             shuffle_expressions,
+            _marker: PhantomData,
         }
     }
 
     /// Returns input of this argument
-    pub fn input_expressions(&self) -> &Vec<ExpressionPoly<F>> {
+    pub fn input_expressions(&self) -> &Vec<IndexedExpressionPoly> {
         &self.input_expressions
     }
 
     /// Returns table of this argument
-    pub fn shuffle_expressions(&self) -> &Vec<ExpressionPoly<F>> {
+    pub fn shuffle_expressions(&self) -> &Vec<IndexedExpressionPoly> {
         &self.shuffle_expressions
     }
 }
@@ -81,13 +90,14 @@ impl<F: Field> Argument<F> {
         let mut input_expressions = Vec::new();
         let mut shuffle_expressions = Vec::new();
         for _ in 0..num_expressions {
-            input_expressions.push(ExpressionPoly::<F>::read(reader, format)?);
-            shuffle_expressions.push(ExpressionPoly::<F>::read(reader, format)?);
+            input_expressions.push(IndexedExpressionPoly::read(reader, format)?);
+            shuffle_expressions.push(IndexedExpressionPoly::read(reader, format)?);
         }
 
         Ok(Argument {
             input_expressions,
             shuffle_expressions,
+            _marker: PhantomData,
         })
     }
 
@@ -143,6 +153,7 @@ impl<C: CurveAffine> Evaluated<C> {
         argument: &'a Argument<C::Scalar>,
         theta: ChallengeTheta<C>,
         gamma: ChallengeGamma<C>,
+        coeff_vals: &[C::Scalar],
         advice_evals: &[C::Scalar],
         fixed_evals: &[C::Scalar],
         instance_evals: &[C::Scalar],
@@ -152,11 +163,17 @@ impl<C: CurveAffine> Evaluated<C> {
 
         let product_expression = || {
             // z(\omega X) (s(X) + \gamma) - z(X) (a(X) + \gamma)
-            let compress_expressions = |expressions: &[ExpressionPoly<C::Scalar>]| {
+            let compress_expressions = |expressions: &[IndexedExpressionPoly]| {
                 expressions
                     .iter()
                     .map(|expression| {
-                        expression.evaluate(advice_evals, fixed_evals, instance_evals, challenges)
+                        expression.evaluate(
+                            coeff_vals,
+                            advice_evals,
+                            fixed_evals,
+                            instance_evals,
+                            challenges,
+                        )
                     })
                     .fold(C::Scalar::ZERO, |acc, eval| acc * &*theta + &eval)
             };

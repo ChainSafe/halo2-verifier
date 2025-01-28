@@ -118,6 +118,12 @@ pub fn unpack(byte: u8, bits: &mut [bool]) {
 }
 
 pub trait ReadExt: io::Read {
+    fn read_u16(&mut self) -> io::Result<u16> {
+        let mut buf = [0u8; 2];
+        self.read_exact(&mut buf)?;
+        Ok(u16::from_be_bytes(buf))
+    }
+
     fn read_u32(&mut self) -> io::Result<u32> {
         let mut buf = [0u8; 4];
         self.read_exact(&mut buf)?;
@@ -140,6 +146,10 @@ pub trait ReadExt: io::Read {
 impl<R: io::Read> ReadExt for R {}
 
 pub trait WriteExt: io::Write {
+    fn write_u16(&mut self, value: u16) -> io::Result<()> {
+        self.write_all(&value.to_be_bytes())
+    }
+
     fn write_u32(&mut self, value: u32) -> io::Result<()> {
         self.write_all(&value.to_be_bytes())
     }

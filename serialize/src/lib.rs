@@ -1,6 +1,8 @@
 use halo2_proofs::arithmetic::Field;
 use halo2_proofs::poly::commitment::Params;
-use halo2_verifier::plonk::{shuffle, Advice, Column, ExpressionPoly, Fixed, Instance};
+use halo2_verifier::plonk::{
+    shuffle, Advice, Column, ExpressionPoly, Fixed, IndexedExpressionPoly, Instance,
+};
 use halo2_verifier::poly::kzg::commitment::ParamsKZG;
 use halo2_verifier::poly::{EvaluationDomain, Rotation, SparsePolynomial, SparseTerm, Term};
 use halo2_verifier::{plonk::lookup, ConstraintSystem, VerifyingKey};
@@ -42,62 +44,143 @@ fn convert_constraint_system<F: Field + Ord>(
         .flat_map(|gate| {
             gate.polynomials()
                 .iter()
-                .map(|expr| expression_transform(&cs, expr))
+                .map(|expr| expression_transform(cs, expr))
                 .collect::<Vec<_>>()
         })
         .collect::<Vec<_>>();
 
-    // let mut fields_pool: Vec<F> = Vec::new();
-    // let gates = gates
-    //     .iter()
-    //     .map(|expr| {
-    //         let terms = expr
-    //             .0
-    //             .terms
-    //             .iter()
-    //             .map(|(coff, t)| {
-    //                 let new_coff = index_element(&mut fields_pool, *coff);
-    //                 (new_coff as u16, t.clone())
-    //             })
-    //             .collect::<Vec<_>>();
-    //         IndexedExpressionPoly::new(SparsePolynomial {
-    //             num_vars: expr.0.num_vars,
-    //             terms,
-    //         })
-    //     })
-    //     .collect();
+    let mut field_values: Vec<F> = Vec::new();
+    let gates = gates
+        .iter()
+        .map(|expr| {
+            let terms = expr
+                .terms()
+                .iter()
+                .map(|(coff, t)| {
+                    let new_coff = index_element(&mut field_values, *coff);
+                    (new_coff as u16, t.clone())
+                })
+                .collect::<Vec<_>>();
+            IndexedExpressionPoly::new(SparsePolynomial {
+                num_vars: expr.num_vars(),
+                terms,
+            })
+        })
+        .collect();
 
     let lookups = cs
         .lookups()
         .iter()
-        .map(|lookup| lookup::Argument {
-            input_expressions: lookup
-                .input_expressions()
-                .iter()
-                .map(|expr| expression_transform(&cs, expr))
-                .collect(),
-            table_expressions: lookup
-                .table_expressions()
-                .iter()
-                .map(|expr| expression_transform(&cs, expr))
-                .collect(),
+        .map(|lookup| {
+            (
+                lookup
+                    .input_expressions()
+                    .iter()
+                    .map(|expr| expression_transform(cs, expr))
+                    .collect::<Vec<_>>(),
+                lookup
+                    .table_expressions()
+                    .iter()
+                    .map(|expr| expression_transform(cs, expr))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let lookups = lookups
+        .into_iter()
+        .map(|l| {
+            lookup::Argument::new(
+                l.0.into_iter()
+                    .map(|expr| {
+                        let terms = expr
+                            .terms()
+                            .iter()
+                            .map(|(coff, t)| {
+                                let new_coff = index_element(&mut field_values, *coff);
+                                (new_coff as u16, t.clone())
+                            })
+                            .collect::<Vec<_>>();
+                        IndexedExpressionPoly::new(SparsePolynomial {
+                            num_vars: expr.num_vars(),
+                            terms,
+                        })
+                    })
+                    .collect(),
+                l.1.into_iter()
+                    .map(|expr| {
+                        let terms = expr
+                            .terms()
+                            .iter()
+                            .map(|(coff, t)| {
+                                let new_coff = index_element(&mut field_values, *coff);
+                                (new_coff as u16, t.clone())
+                            })
+                            .collect::<Vec<_>>();
+                        IndexedExpressionPoly::new(SparsePolynomial {
+                            num_vars: expr.num_vars(),
+                            terms,
+                        })
+                    })
+                    .collect(),
+            )
         })
         .collect();
 
     let shuffles = cs
         .shuffles()
         .iter()
-        .map(|s| shuffle::Argument {
-            input_expressions: s
-                .input_expressions()
-                .iter()
-                .map(|e| expression_transform(cs, e))
-                .collect(),
-            shuffle_expressions: s
-                .shuffle_expressions()
-                .iter()
-                .map(|e| expression_transform(cs, e))
-                .collect(),
+        .map(|s| {
+            (
+                s.input_expressions()
+                    .iter()
+                    .map(|e| expression_transform(cs, e))
+                    .collect::<Vec<_>>(),
+                s.shuffle_expressions()
+                    .iter()
+                    .map(|e| expression_transform(cs, e))
+                    .collect::<Vec<_>>(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let shuffles = shuffles
+        .into_iter()
+        .map(|s| {
+            shuffle::Argument::new(
+                s.0.into_iter()
+                    .map(|expr| {
+                        let terms = expr
+                            .terms()
+                            .iter()
+                            .map(|(coff, t)| {
+                                let new_coff = index_element(&mut field_values, *coff);
+                                (new_coff as u16, t.clone())
+                            })
+                            .collect::<Vec<_>>();
+                        IndexedExpressionPoly::new(SparsePolynomial {
+                            num_vars: expr.num_vars(),
+                            terms,
+                        })
+                    })
+                    .collect(),
+                s.1.into_iter()
+                    .map(|expr| {
+                        let terms = expr
+                            .terms()
+                            .iter()
+                            .map(|(coff, t)| {
+                                let new_coff = index_element(&mut field_values, *coff);
+                                (new_coff as u16, t.clone())
+                            })
+                            .collect::<Vec<_>>();
+                        IndexedExpressionPoly::new(SparsePolynomial {
+                            num_vars: expr.num_vars(),
+                            terms,
+                        })
+                    })
+                    .collect(),
+            )
         })
         .collect();
 
@@ -125,7 +208,7 @@ fn convert_constraint_system<F: Field + Ord>(
         permutation: permutation::convert_permutation_argument(cs.permutation().clone()),
         lookups,
         shuffles,
-        // fields_pool,
+        coeff_vals: field_values,
     }
 }
 

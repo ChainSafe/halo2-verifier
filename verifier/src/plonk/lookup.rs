@@ -1,24 +1,35 @@
+use core::marker::PhantomData;
+
 use crate::{
     arithmetic::CurveAffine,
     helpers::{ReadExt, SerdeFormat, SerdePrimeField, WriteExt},
     io,
-    plonk::{
-        ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, Error, ExpressionPoly,
-        VerifyingKey,
-    },
+    plonk::{ChallengeBeta, ChallengeGamma, ChallengeTheta, ChallengeX, Error, VerifyingKey},
     poly::{commitment::MSM, Rotation, VerifierQuery},
     transcript::{EncodedChallenge, TranscriptRead},
 };
 use alloc::vec::Vec;
 use ff::Field;
 
-#[derive(Clone, Debug)]
+use super::IndexedExpressionPoly;
+
+#[derive(Clone, Debug, Default)]
 pub struct Argument<F: Field> {
-    pub input_expressions: Vec<ExpressionPoly<F>>,
-    pub table_expressions: Vec<ExpressionPoly<F>>,
+    pub input_expressions: Vec<IndexedExpressionPoly>,
+    pub table_expressions: Vec<IndexedExpressionPoly>,
+
+    _marker: PhantomData<F>,
 }
 
 impl<F: Field> Argument<F> {
+    pub fn new(input_expressions: Vec<IndexedExpressionPoly>, table_expressions: Vec<IndexedExpressionPoly>) -> Self {
+        Self {
+            input_expressions,
+            table_expressions,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn write<W: io::Write>(&self, writer: &mut W, format: SerdeFormat) -> io::Result<()>
     where
         F: SerdePrimeField,
@@ -42,13 +53,14 @@ impl<F: Field> Argument<F> {
         let mut input_expressions = Vec::new();
         let mut table_expressions = Vec::new();
         for _ in 0..num_expressions {
-            input_expressions.push(ExpressionPoly::<F>::read(reader, format)?);
-            table_expressions.push(ExpressionPoly::<F>::read(reader, format)?);
+            input_expressions.push(IndexedExpressionPoly::read(reader, format)?);
+            table_expressions.push(IndexedExpressionPoly::read(reader, format)?);
         }
 
         Ok(Argument {
             input_expressions,
             table_expressions,
+            _marker: PhantomData,
         })
     }
 
@@ -150,6 +162,7 @@ impl<C: CurveAffine> Evaluated<C> {
         theta: ChallengeTheta<C>,
         beta: ChallengeBeta<C>,
         gamma: ChallengeGamma<C>,
+        coeff_vals: &[C::Scalar],
         advice_evals: &[C::Scalar],
         fixed_evals: &[C::Scalar],
         instance_evals: &[C::Scalar],
@@ -164,11 +177,17 @@ impl<C: CurveAffine> Evaluated<C> {
                 * &(self.permuted_input_eval + &*beta)
                 * &(self.permuted_table_eval + &*gamma);
 
-            let compress_expressions = |expressions: &[ExpressionPoly<C::Scalar>]| {
+            let compress_expressions = |expressions: &[IndexedExpressionPoly]| {
                 expressions
                     .iter()
                     .map(|expression| {
-                        expression.evaluate(advice_evals, fixed_evals, instance_evals, challenges)
+                        expression.evaluate(
+                            coeff_vals,
+                            advice_evals,
+                            fixed_evals,
+                            instance_evals,
+                            challenges,
+                        )
                     })
                     .fold(C::Scalar::ZERO, |acc, eval| acc * &*theta + &eval)
             };

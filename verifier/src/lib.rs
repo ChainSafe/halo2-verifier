@@ -283,7 +283,13 @@ where
                     core::iter::empty()
                         // Evaluate the circuit using the custom gates provided
                         .chain(vk.cs.gates.iter().map(move |poly| {
-                            poly.evaluate(advice_evals, fixed_evals, instance_evals, challenges)
+                            poly.evaluate(
+                                &vk.cs.coeff_vals,
+                                advice_evals,
+                                fixed_evals,
+                                instance_evals,
+                                challenges,
+                            )
                         }))
                         .chain(permutation.expressions(
                             vk,
@@ -309,6 +315,7 @@ where
                                     theta,
                                     beta,
                                     gamma,
+                                    &vk.cs.coeff_vals,
                                     advice_evals,
                                     fixed_evals,
                                     instance_evals,
@@ -325,6 +332,7 @@ where
                                     argument,
                                     theta,
                                     gamma,
+                                    &vk.cs.coeff_vals,
                                     advice_evals,
                                     fixed_evals,
                                     instance_evals,
