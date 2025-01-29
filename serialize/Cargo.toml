@@ -3,6 +3,10 @@ name = "serialize"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "convert-params"
+path = "bin/convert_params.rs"
+
 [dependencies]
 ff.workspace = true
 group.workspace = true
