@@ -7,7 +7,7 @@ use core::{
 };
 
 use crate::arithmetic::{CurveAffine, Field};
-use rand_core::RngCore;
+use getrandom_or_panic::RngCore;
 
 use crate::io;
 use alloc::vec::Vec;

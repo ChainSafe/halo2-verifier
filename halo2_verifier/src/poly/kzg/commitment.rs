@@ -11,7 +11,7 @@ use core::fmt::Debug;
 use core::marker::PhantomData;
 use group::{prime::PrimeCurveAffine, Curve};
 use halo2curves::pairing::Engine;
-use rand_core::RngCore;
+use getrandom_or_panic::RngCore;
 
 use crate::io;
 
