@@ -303,16 +303,16 @@ fn main() {
     use halo2_proofs::dev::MockProver;
     use halo2_proofs::halo2curves::bn256::Fr;
 
-    const N: usize = 1;
+    const N: usize = 1 << 19;
     // ANCHOR: test-circuit
     // The number of rows in our circuit cannot exceed 2^k. Since our example
     // circuit is very small, we can pick a very small value here.
-    let k = 8;
+    let k = 21;
 
     // Prepare the private and public inputs to the circuit!
-    let a = [Fr::from(2); N];
-    let b = [Fr::from(3); N];
-    let c: Vec<Fr> = a.iter().zip(b).map(|(&a, b)| a * b).collect();
+    let a = vec![Fr::from(2); N];
+    let b = vec![Fr::from(3); N];
+    let c: Vec<Fr> = a.iter().zip(b.iter()).map(|(&a, &b)| a * b).collect();
 
     // Instantiate the circuit with the private inputs.
     let circuit = MyCircuit {
@@ -359,6 +359,8 @@ fn main() {
         .expect("proof generation should not fail");
 
         let proof = transcript.finalize();
+
+        println!("proof size: {}", proof.len());
 
         std::fs::write("VALID_PROOF.bin", proof).unwrap();
 

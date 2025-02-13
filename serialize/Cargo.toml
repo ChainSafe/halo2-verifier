@@ -14,7 +14,9 @@ halo2_proofs.workspace = true
 halo2curves.workspace = true
 halo2_verifier = { path = "../halo2_verifier" }
 
+
+
 [dev-dependencies]
 hex = { version = "0.4" }
-rand = { version = "0.8.5" }
-rand_chacha = { version = "0.3" }
+rand.workspace = true
+rand_chacha.workspace = true

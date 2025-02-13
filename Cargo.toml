@@ -4,9 +4,11 @@ members = ["serialize", "halo2_verifier"]
 resolver = "2"
 
 [workspace.dependencies]
-rand = { version = "0.8.5" }
-rand_chacha = { version = "0.3" }
+rand = { version = "0.8.5", default-features = false }
+rand_chacha = { version = "0.3", default-features = false }
+rand_core = { version = "0.6", default-features = false, features = ["getrandom"] }
+
 ff = { version = "0.13.0", default-features = false }
 group = "0.13"
 halo2_proofs = { git = "https://github.com/ChainSafe/halo2.git", branch = "no-std", default-features = false }
-halo2curves = { git = "https://github.com/ChainSafe/halo2curves.git", branch = "no-std", default-features = false }
+halo2curves = { git = "https://github.com/ChainSafe/halo2curves.git", branch = "no-std", default-features = false } 
